@@ -1,5 +1,11 @@
 # skiller
 
+## 0.6.2
+
+### Patch Changes
+
+- [#14](https://github.com/udecode/skiller/pull/14) [`9625330`](https://github.com/udecode/skiller/commit/96253305e6106e25069518a9287724c646be5a61) Thanks [@zbeyens](https://github.com/zbeyens)! - Copy skill folders from `.claude/rules` to `.claude/skills` during apply
+
 ## 0.6.1
 
 ### Patch Changes
