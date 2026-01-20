@@ -462,6 +462,15 @@ ${fileReference}
     }
   }
 
+  // Also include folder skills from rules (folders with SKILL.md)
+  // so they're not marked as orphaned during pruning
+  const rulesDir = path.join(skillerDir, 'rules');
+  const skillFoldersInRules = await findSkillFoldersInRules(rulesDir);
+  for (const skillFolder of skillFoldersInRules) {
+    const folderName = path.basename(skillFolder);
+    generatedSkillNames.add(folderName);
+  }
+
   // Prune orphaned skills if prune setting is configured
   await pruneOrphanedSkills(
     skillsDir,
