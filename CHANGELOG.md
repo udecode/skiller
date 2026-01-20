@@ -1,5 +1,11 @@
 # skiller
 
+## 0.6.3
+
+### Patch Changes
+
+- [`7bb47db`](https://github.com/udecode/skiller/commit/7bb47db73aa76dee45a42c450422a598ab09ec7c) - Fix orphaned skill detection for folder skills copied from `.claude/rules`
+
 ## 0.6.2
 
 ### Patch Changes
