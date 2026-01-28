@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as fs from "fs/promises";
 import * as os from "os";
-import { discoverSkills } from "../src/core/SkillsProcessor";
+import { discoverSkills, syncMdcToSkillMd } from "../src/core/SkillsProcessor";
 import { SKILL_MD_FILENAME } from "../src/constants";
 
 describe("Skills Discovery and Validation", () => {
@@ -156,6 +156,198 @@ describe("Skills Discovery and Validation", () => {
 
 			const copiedSkill1 = path.join(destDir, "skill1", SKILL_MD_FILENAME);
 			expect(await fs.readFile(copiedSkill1, "utf8")).toBe("# Skill 1");
+		});
+	});
+
+	describe("syncMdcToSkillMd", () => {
+		it("Case 1: creates SKILL.md with synced:true from standalone .mdc file", async () => {
+			const skillsDir = path.join(tmpDir, ".claude", "skills");
+			await fs.mkdir(skillsDir, { recursive: true });
+
+			// Create standalone .mdc file at skills root
+			const mdcContent = `---
+description: My test skill
+---
+
+# Test Skill Content
+
+This is the skill body.
+`;
+			await fs.writeFile(path.join(skillsDir, "my-skill.mdc"), mdcContent);
+
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			expect(result.synced).toContain("my-skill");
+			expect(result.warnings).toHaveLength(0);
+
+			// Verify SKILL.md was created with synced: true
+			const skillMdPath = path.join(skillsDir, "my-skill", SKILL_MD_FILENAME);
+			const content = await fs.readFile(skillMdPath, "utf8");
+			expect(content).toContain("name: my-skill");
+			expect(content).toContain("description: My test skill");
+			expect(content).toContain("synced: true");
+			expect(content).toContain("# Test Skill Content");
+		});
+
+		it("Case 2: regenerates SKILL.md from .mdc when synced:true", async () => {
+			const skillsDir = path.join(tmpDir, ".claude", "skills");
+			const skillFolder = path.join(skillsDir, "synced-skill");
+			await fs.mkdir(skillFolder, { recursive: true });
+
+			// Create existing SKILL.md with synced: true
+			await fs.writeFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				`---
+name: synced-skill
+description: Old description
+synced: true
+---
+
+# Old Content`,
+			);
+
+			// Create .mdc with new content
+			await fs.writeFile(
+				path.join(skillsDir, "synced-skill.mdc"),
+				`---
+description: New description from mdc
+---
+
+# New Content from MDC`,
+			);
+
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			expect(result.synced).toContain("synced-skill");
+
+			// Verify SKILL.md was updated with .mdc content
+			const content = await fs.readFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				"utf8",
+			);
+			expect(content).toContain("description: New description from mdc");
+			expect(content).toContain("# New Content from MDC");
+			expect(content).toContain("synced: true");
+		});
+
+		it("Case 3: generates .mdc from SKILL.md without synced flag", async () => {
+			const skillsDir = path.join(tmpDir, ".claude", "skills");
+			const skillFolder = path.join(skillsDir, "unsynced-skill");
+			await fs.mkdir(skillFolder, { recursive: true });
+
+			// Create SKILL.md without synced: true
+			await fs.writeFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				`---
+name: unsynced-skill
+description: Original skill
+---
+
+# Original Content`,
+			);
+
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			expect(result.synced).toContain("unsynced-skill");
+
+			// Verify .mdc was created
+			const mdcContent = await fs.readFile(
+				path.join(skillsDir, "unsynced-skill.mdc"),
+				"utf8",
+			);
+			expect(mdcContent).toContain("description: Original skill");
+			expect(mdcContent).toContain("# Original Content");
+
+			// Verify SKILL.md was updated with synced: true
+			const skillContent = await fs.readFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				"utf8",
+			);
+			expect(skillContent).toContain("synced: true");
+		});
+
+		it("skips .mdc when SKILL.md exists without synced:true", async () => {
+			const skillsDir = path.join(tmpDir, ".claude", "skills");
+			const skillFolder = path.join(skillsDir, "manual-skill");
+			await fs.mkdir(skillFolder, { recursive: true });
+
+			// Create SKILL.md without synced: true (manually created)
+			await fs.writeFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				`---
+name: manual-skill
+description: Manual skill
+---
+
+# Manual Content`,
+			);
+
+			// Create .mdc that should be ignored (SKILL.md is source of truth)
+			await fs.writeFile(
+				path.join(skillsDir, "manual-skill.mdc"),
+				"# Should be ignored",
+			);
+
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			// The skill should be synced (Case 3: generate .mdc, add synced:true)
+			expect(result.synced).toContain("manual-skill");
+
+			// The .mdc should now contain the SKILL.md content (not the ignored content)
+			const mdcContent = await fs.readFile(
+				path.join(skillsDir, "manual-skill.mdc"),
+				"utf8",
+			);
+			expect(mdcContent).toContain("# Manual Content");
+		});
+
+		it("handles dry run mode", async () => {
+			const skillsDir = path.join(tmpDir, ".claude", "skills");
+			await fs.mkdir(skillsDir, { recursive: true });
+
+			await fs.writeFile(
+				path.join(skillsDir, "dry-run-skill.mdc"),
+				"# Dry run content",
+			);
+
+			const result = await syncMdcToSkillMd(skillsDir, false, true);
+
+			expect(result.synced).toContain("dry-run-skill");
+
+			// Verify folder was NOT created in dry run
+			const folderExists = await fs
+				.access(path.join(skillsDir, "dry-run-skill"))
+				.then(() => true)
+				.catch(() => false);
+			expect(folderExists).toBe(false);
+		});
+
+		it("uses default description when frontmatter has none", async () => {
+			const skillsDir = path.join(tmpDir, ".claude", "skills");
+			await fs.mkdir(skillsDir, { recursive: true });
+
+			// Create .mdc without description in frontmatter
+			await fs.writeFile(
+				path.join(skillsDir, "no-desc.mdc"),
+				"# Just content, no frontmatter",
+			);
+
+			await syncMdcToSkillMd(skillsDir, false, false);
+
+			const content = await fs.readFile(
+				path.join(skillsDir, "no-desc", SKILL_MD_FILENAME),
+				"utf8",
+			);
+			expect(content).toContain("description: 'Skill: no-desc'");
+		});
+
+		it("returns empty when skills directory does not exist", async () => {
+			const nonExistentDir = path.join(tmpDir, "does-not-exist");
+
+			const result = await syncMdcToSkillMd(nonExistentDir, false, false);
+
+			expect(result.synced).toHaveLength(0);
+			expect(result.warnings).toHaveLength(0);
 		});
 	});
 

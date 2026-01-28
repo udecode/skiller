@@ -101,7 +101,8 @@ enabled = true
 			"test-skill",
 			SKILL_MD_FILENAME,
 		);
-		expect(await fs.readFile(copiedSkill, "utf8")).toBe("# Test Skill");
+		// Content may have synced: true frontmatter added by sync process
+		expect(await fs.readFile(copiedSkill, "utf8")).toContain("# Test Skill");
 	});
 
 	it("CLI flag overrides skiller.toml setting (skips propagation when disabled)", async () => {
@@ -182,6 +183,7 @@ enabled = true
 			"test-skill",
 			SKILL_MD_FILENAME,
 		);
-		expect(await fs.readFile(copiedSkill, "utf8")).toBe("# Test Skill");
+		// Content may have synced: true frontmatter added by sync process
+		expect(await fs.readFile(copiedSkill, "utf8")).toContain("# Test Skill");
 	});
 });

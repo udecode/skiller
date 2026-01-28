@@ -290,6 +290,18 @@ export async function loadConfig(
     skillsConfig.enabled = rawSkillsSection.enabled;
   }
 
+  // Deprecation warnings for removed config options
+  if ('generate_from_rules' in rawSkillsSection) {
+    console.warn(
+      `[skiller] Warning: skills.generate_from_rules is deprecated and has no effect. Skills are now edited directly in .claude/skills/`,
+    );
+  }
+  if ('prune' in rawSkillsSection) {
+    console.warn(
+      `[skiller] Warning: skills.prune is deprecated and has no effect. Skills in .claude/skills/ are never auto-deleted.`,
+    );
+  }
+
   const rawRulesSection =
     raw.rules && typeof raw.rules === 'object' && !Array.isArray(raw.rules)
       ? (raw.rules as Record<string, unknown>)

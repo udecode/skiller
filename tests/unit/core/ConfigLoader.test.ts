@@ -155,6 +155,36 @@ describe("ConfigLoader", () => {
 			expect(config.skills).toBeDefined();
 			expect(config.skills?.enabled).toBeUndefined();
 		});
+
+		it("warns when deprecated generate_from_rules option is used", async () => {
+			const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+			const content = `
+        [skills]
+        enabled = true
+        generate_from_rules = true
+      `;
+			await fs.writeFile(path.join(skillerDir, "skiller.toml"), content);
+			await loadConfig({ projectRoot: tmpDir });
+			expect(warnSpy).toHaveBeenCalledWith(
+				expect.stringContaining("generate_from_rules is deprecated"),
+			);
+			warnSpy.mockRestore();
+		});
+
+		it("warns when deprecated prune option is used", async () => {
+			const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+			const content = `
+        [skills]
+        enabled = true
+        prune = true
+      `;
+			await fs.writeFile(path.join(skillerDir, "skiller.toml"), content);
+			await loadConfig({ projectRoot: tmpDir });
+			expect(warnSpy).toHaveBeenCalledWith(
+				expect.stringContaining("prune is deprecated"),
+			);
+			warnSpy.mockRestore();
+		});
 	});
 
 	describe("gitignore configuration", () => {

@@ -112,6 +112,26 @@ export async function loadUnifiedConfig(
       if (typeof skillsObj.enabled === 'boolean') {
         skillsConfig.enabled = skillsObj.enabled;
       }
+
+      // Deprecation warnings for removed config options
+      if ('generate_from_rules' in skillsObj) {
+        diagnostics.push({
+          severity: 'warning',
+          code: 'SKILLS_DEPRECATED_OPTION',
+          message:
+            'skills.generate_from_rules is deprecated and has no effect. Skills are now edited directly in .claude/skills/',
+          file: tomlFile,
+        });
+      }
+      if ('prune' in skillsObj) {
+        diagnostics.push({
+          severity: 'warning',
+          code: 'SKILLS_DEPRECATED_OPTION',
+          message:
+            'skills.prune is deprecated and has no effect. Skills in .claude/skills/ are never auto-deleted.',
+          file: tomlFile,
+        });
+      }
     }
   }
 

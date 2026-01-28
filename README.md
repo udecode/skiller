@@ -2,51 +2,49 @@
 
 A Claude-centric fork of [ruler](https://github.com/intellectronica/ruler) with native skills support:
 
-## 1. CLAUDE.md @filename References
+## 1. Skills as Source of Truth
+
+- `.claude/skills/` is the committed source of truth for skills
+- **Bidirectional sync** between `.mdc` and `SKILL.md`:
+  - Create `.claude/skills/foo.mdc` → auto-generates `.claude/skills/foo/SKILL.md`
+  - Create `.claude/skills/foo/SKILL.md` → auto-generates `.claude/skills/foo.mdc`
+- Uses `synced: true` frontmatter to track sync direction
+- Edit either file, the other stays in sync on next `skiller apply`
+- Skill folders from `.claude/rules/` are copied to `.claude/skills/`
+
+## 2. CLAUDE.md @filename References
 
 - Uses `@filename` syntax instead of merging content
 - Claude Code auto-includes referenced files
 - Reduces CLAUDE.md size and keeps sources separate
 - Other agents still get merged content
 
-## 2. MDC File Support
+## 3. MDC File Support
 
 - Supports both `.md` and `.mdc` files (Nuxt Content, Vue)
 - All patterns auto-expand: `"components"` → `"components/**/*.{md,mdc}"`
 
-## 3. Rules Filtering
+## 4. Rules Filtering
 
 - `include`/`exclude` glob patterns in `[rules]`
 - Directory names auto-expand to `directory/**/*.{md,mdc}`
 - Organize by team/feature, exclude drafts/internal docs
 
-## 4. Claude Root Folder
+## 5. Claude Root Folder
 
 - Default directory is `.claude/` (no extra flags needed)
 - Skills already in `.claude/skills` (no copying)
 - Single directory for all Claude Code config
 
-## 5. Cursor-style Rules
+## 6. Cursor-style Rules
 
 - `merge_strategy = "cursor"` parses `.mdc` frontmatter
 - Only includes rules with `alwaysApply: true`
 - Strips frontmatter, keeps body only
 
-## 6. Backup Control
+## 7. Backup Control
 
 - `[backup].enabled = false` disables `.bak` files
-
-## 7. Auto-Generate Skills from Rules
-
-- `[skills].generate_from_rules = true` creates skills from .mdc files
-- Only generates from files with `alwaysApply: false` (or undefined)
-- Files with `alwaysApply: true` are merged into AGENTS.md instead
-- Automatically removes skills when `alwaysApply` changes to `true`
-- Skills use @filename references to original .mdc (for Claude Code)
-- MCP agents (excluding Cursor) get full content in .skillz (frontmatter stripped)
-- Cursor uses .cursor/rules directly (no skillz MCP needed)
-- Globs appended to description: "Applies to files matching: ..."
-- **Folder support**: `rules/docx/docx.mdc` + `rules/docx/script.sh` → `skills/docx/SKILL.md` + `skills/docx/script.sh`
 
 ---
 
@@ -555,19 +553,13 @@ Skiller uses this configuration with the `merge` (default) or `overwrite` strate
 export CODEX_HOME="$(pwd)/.codex"
 ```
 
-## Skills Support (Experimental)
+## Skills Support
 
-**⚠️ Experimental Feature**: Skills support is currently experimental and requires `uv` (the Python package manager) to be installed on your system for MCP-based agent integration.
-
-Skiller can manage and propagate Claude Code-compatible skills to supported AI agents. Skills are stored in `.claude/skills/` and are automatically distributed to compatible agents when you run `skiller apply`.
+Skiller can manage and propagate Claude Code-compatible skills to supported AI agents. Skills are stored in `.claude/skills/` as the **committed source of truth** and are automatically discovered by Claude Code.
 
 ### How It Works
 
-Skills are specialized knowledge packages that extend AI agent capabilities with domain-specific expertise, workflows, or tool integrations. Skiller discovers skills in your `.claude/skills/` directory and propagates them to compatible agents:
-
-- **Claude Code**: Skills copied to `.claude/skills/` with @filename references preserved
-- **Cursor**: Uses `.cursor/rules/` directly (copied when `merge_strategy = "cursor"`), no skillz MCP needed
-- **Other MCP agents**: Skills copied to `.skillz/` with @filename references expanded to full content (frontmatter stripped), Skillz MCP server auto-configured via `uvx`
+Skills are specialized knowledge packages that extend AI agent capabilities with domain-specific expertise, workflows, or tool integrations. Skiller discovers skills in your `.claude/skills/` directory and keeps them in sync.
 
 ### Skills Directory Structure
 
@@ -575,64 +567,60 @@ Skills can be organized flat or nested:
 
 ```
 .claude/skills/
+├── my-skill.mdc           # Standalone skill file (auto-syncs to folder)
 ├── my-skill/
-│   ├── SKILL.md           # Required: skill instructions/knowledge
+│   └── SKILL.md           # Generated from my-skill.mdc (synced: true)
+├── another-skill/
+│   ├── SKILL.md           # Manually created skill
 │   ├── helper.py          # Optional: additional resources (scripts)
 │   └── reference.md       # Optional: additional resources (docs)
-└── another-skill/
-    └── SKILL.md
 ```
 
-Each skill must contain:
+Each skill can be defined in two ways:
 
-- `SKILL.md` - Primary skill file with instructions or knowledge base
+1. **Standalone `.mdc` file** - Simple skills can be a single `.mdc` file at the skills root
+2. **Skill folder with `SKILL.md`** - Complex skills with additional resources
 
-Skills can optionally include additional resources like:
+### Bidirectional Sync
 
-- Markdown files with supplementary documentation
-- Python, JavaScript, or other scripts
-- Configuration files or data
+Skiller provides bidirectional sync between `.mdc` files and `SKILL.md` folders:
 
-### Auto-Generated Skills from Rules (with `generate_from_rules = true`)
+| Scenario | Sync Direction |
+|----------|---------------|
+| `.mdc` exists, no `SKILL.md` | → Generate `SKILL.md` with `synced: true` |
+| `SKILL.md` has `synced: true` | .mdc → `SKILL.md` (regenerate from .mdc) |
+| `SKILL.md` without `synced: true` | `SKILL.md` → .mdc (SKILL.md is source of truth) |
 
-When using `[skills].generate_from_rules = true`, skills are automatically created from `.mdc` files in your rules directory. This feature supports folder-based organization:
+The `synced: true` frontmatter flag indicates that the `.mdc` file is the source of truth:
 
-**Folder Support**: If your `.mdc` file is in a folder with the same name, all additional files in that folder are automatically copied to the generated skill:
+```yaml
+---
+name: my-skill
+description: My custom skill
+synced: true
+---
+
+# Skill content here
+```
+
+### Skill Folders from Rules
+
+Skill folders (directories containing `SKILL.md`) in `.claude/rules/` are automatically copied to `.claude/skills/` during `skiller apply`:
 
 ```
 .claude/rules/docx/
-├── docx.mdc          # Main rule (with frontmatter)
+├── SKILL.md          # Makes this a skill folder
 ├── script.sh         # Helper script
 └── templates/        # Subdirectory
     └── default.docx  # Template file
 
-→ Generated:
+→ Copied to:
 
 .claude/skills/docx/
-├── SKILL.md          # Generated from docx.mdc
+├── SKILL.md          # Copied as-is
 ├── script.sh         # Copied automatically
 └── templates/        # Copied automatically
     └── default.docx  # Copied automatically
-```
-
-**Requirements for folder copying**:
-
-- The `.mdc` file must be in a folder with the same basename (e.g., `docx/docx.mdc`)
-- The `.mdc` file must have frontmatter with `alwaysApply: false` (or undefined)
-- All files and subdirectories in that folder (except the `.mdc` file itself) are copied
-
-**Example `.mdc` file with frontmatter**:
-
-```markdown
----
-description: DOCX file processing utilities
-globs: ['**/*.docx']
-alwaysApply: false
----
-
-# DOCX Processing
-
-Use script.sh to process DOCX files. Templates are in templates/ directory.
 ```
 
 ### Configuration
@@ -656,46 +644,6 @@ skiller apply --no-skills
 enabled = true  # or false to disable
 ```
 
-### Skillz MCP Server
-
-For agents that support MCP but don't have native skills support (excluding Claude Code and Cursor), Skiller automatically:
-
-1. Copies skills to `.skillz/` directory with @filename references expanded to full content
-2. Strips frontmatter from referenced .mdc files to avoid duplication
-3. Configures a Skillz MCP server in the agent's configuration
-4. Uses `uvx` to launch the server with the absolute path to `.skillz`
-
-**Note**: Cursor is excluded from Skillz MCP because it uses `.cursor/rules/` directory natively.
-
-Example auto-generated MCP server configuration:
-
-```toml
-[mcp_servers.skillz]
-command = "uvx"
-args = ["skillz@latest", "/absolute/path/to/project/.skillz"]
-```
-
-### `.gitignore` Integration
-
-When skills support is enabled and gitignore integration is active, Skiller automatically adds:
-
-- `.claude/skills/` (when generated from `.claude/rules/` or copied from `.claude/skills/`)
-- `.skillz/` (for MCP-based agents excluding Cursor)
-- `.cursor/rules/` (when using `merge_strategy = "cursor"`)
-
-to your `.gitignore` file within the managed Skiller block.
-
-**Note**: If you manually create `.claude/skills/` without `.claude/rules/`, it won't be gitignored (assumed to be versioned).
-
-### Requirements
-
-- **For Claude Code**: No additional requirements
-- **For MCP agents**: `uv` must be installed and available in your PATH
-  ```bash
-  # Install uv if needed
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-  ```
-
 ### Validation
 
 Skiller validates discovered skills and issues warnings for:
@@ -713,32 +661,39 @@ Test skills propagation without making changes:
 skiller apply --dry-run
 ```
 
-This shows which skills would be copied and which MCP servers would be configured.
+This shows which skills would be synced and validated.
 
 ### Example Workflow
 
 ```bash
-# 1. Add a skill to your project
-mkdir -p .claude/skills/my-skill
-cat > .claude/skills/my-skill/SKILL.md << 'EOF'
+# Option 1: Create a skill using .mdc file
+cat > .claude/skills/my-skill.mdc << 'EOF'
+---
+description: My custom skill
+---
+
 # My Custom Skill
 
 This skill provides specialized knowledge for...
-
-## Usage
-
-When working on this project, always follow these guidelines:
-- Use TypeScript for all new code
-- Write tests for all features
-- Follow the existing code style
 EOF
 
-# 2. Apply to all agents (skills enabled by default)
+# Option 2: Create a skill folder directly
+mkdir -p .claude/skills/my-skill
+cat > .claude/skills/my-skill/SKILL.md << 'EOF'
+---
+name: my-skill
+description: My custom skill
+---
+
+# My Custom Skill
+
+This skill provides specialized knowledge for...
+EOF
+
+# Apply to sync skills (runs bidirectional sync)
 skiller apply
 
-# 3. Skills are now available to compatible agents:
-#    - Claude Code: .claude/skills/my-skill/
-#    - Other MCP agents: .skillz/my-skill/ + Skillz MCP server configured
+# Skills are now available to Claude Code via .claude/skills/
 ```
 
 ## `.gitignore` Integration
