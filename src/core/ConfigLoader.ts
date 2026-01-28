@@ -57,8 +57,6 @@ const skillerConfigSchema = z.object({
   skills: z
     .object({
       enabled: z.boolean().optional(),
-      generate_from_rules: z.boolean().optional(),
-      prune: z.boolean().optional(),
     })
     .optional(),
   rules: z
@@ -290,12 +288,6 @@ export async function loadConfig(
   const skillsConfig: SkillsConfig = {};
   if (typeof rawSkillsSection.enabled === 'boolean') {
     skillsConfig.enabled = rawSkillsSection.enabled;
-  }
-  if (typeof rawSkillsSection.generate_from_rules === 'boolean') {
-    skillsConfig.generate_from_rules = rawSkillsSection.generate_from_rules;
-  }
-  if (typeof rawSkillsSection.prune === 'boolean') {
-    skillsConfig.prune = rawSkillsSection.prune;
   }
 
   const rawRulesSection =

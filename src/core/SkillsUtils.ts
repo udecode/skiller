@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { SkillInfo } from '../types';
-import { SKILL_MD_FILENAME } from '../constants';
+import { SKILL_MD_FILENAME, MAX_RECURSION_DEPTH } from '../constants';
 
 /**
  * Checks if a directory contains a SKILL.md file.
@@ -19,7 +19,15 @@ export async function hasSkillMd(dirPath: string): Promise<boolean> {
 /**
  * Checks if a directory is a grouping directory (contains subdirectories with SKILL.md).
  */
-export async function isGroupingDir(dirPath: string): Promise<boolean> {
+export async function isGroupingDir(
+  dirPath: string,
+  depth: number = 0,
+): Promise<boolean> {
+  // Security: Prevent DoS via deeply nested directories
+  if (depth >= MAX_RECURSION_DEPTH) {
+    return false;
+  }
+
   try {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
     const subdirs = entries.filter((e) => e.isDirectory());
@@ -30,7 +38,7 @@ export async function isGroupingDir(dirPath: string): Promise<boolean> {
         return true;
       }
       // Check recursively for nested grouping
-      if (await isGroupingDir(subdirPath)) {
+      if (await isGroupingDir(subdirPath, depth + 1)) {
         return true;
       }
     }
@@ -50,7 +58,19 @@ export async function walkSkillsTree(
   const skills: SkillInfo[] = [];
   const warnings: string[] = [];
 
-  async function walk(currentPath: string, relativePath: string) {
+  async function walk(
+    currentPath: string,
+    relativePath: string,
+    depth: number = 0,
+  ) {
+    // Security: Prevent DoS via deeply nested directories
+    if (depth >= MAX_RECURSION_DEPTH) {
+      warnings.push(
+        `Maximum directory depth (${MAX_RECURSION_DEPTH}) reached at ${relativePath || 'root'}`,
+      );
+      return;
+    }
+
     try {
       const entries = await fs.readdir(currentPath, { withFileTypes: true });
 
@@ -65,7 +85,7 @@ export async function walkSkillsTree(
           : entry.name;
 
         const hasSkill = await hasSkillMd(entryPath);
-        const isGrouping = !hasSkill && (await isGroupingDir(entryPath));
+        const isGrouping = !hasSkill && (await isGroupingDir(entryPath, depth));
 
         if (hasSkill) {
           // This is a valid skill directory
@@ -77,7 +97,7 @@ export async function walkSkillsTree(
           });
         } else if (isGrouping) {
           // This is a grouping directory, recurse into it
-          await walk(entryPath, entryRelativePath);
+          await walk(entryPath, entryRelativePath, depth + 1);
         } else {
           // This is neither a skill nor a grouping directory - warn about it
           warnings.push(
@@ -93,7 +113,7 @@ export async function walkSkillsTree(
     }
   }
 
-  await walk(root, '');
+  await walk(root, '', 0);
   return { skills, warnings };
 }
 
@@ -110,7 +130,16 @@ export function formatValidationWarnings(warnings: string[]): string {
 /**
  * Recursively copies a directory and all its contents.
  */
-async function copyRecursive(src: string, dest: string): Promise<void> {
+async function copyRecursive(
+  src: string,
+  dest: string,
+  depth: number = 0,
+): Promise<void> {
+  // Security: Prevent DoS via deeply nested directories
+  if (depth >= MAX_RECURSION_DEPTH) {
+    return;
+  }
+
   const stat = await fs.stat(src);
 
   if (stat.isDirectory()) {
@@ -120,7 +149,7 @@ async function copyRecursive(src: string, dest: string): Promise<void> {
     for (const entry of entries) {
       const srcPath = path.join(src, entry.name);
       const destPath = path.join(dest, entry.name);
-      await copyRecursive(srcPath, destPath);
+      await copyRecursive(srcPath, destPath, depth + 1);
     }
   } else {
     await fs.copyFile(src, dest);
@@ -148,7 +177,13 @@ async function copyAndTransformSkills(
   src: string,
   dest: string,
   projectRoot: string,
+  depth: number = 0,
 ): Promise<void> {
+  // Security: Prevent DoS via deeply nested directories
+  if (depth >= MAX_RECURSION_DEPTH) {
+    return;
+  }
+
   const stat = await fs.stat(src);
 
   if (stat.isDirectory()) {
@@ -158,7 +193,7 @@ async function copyAndTransformSkills(
     for (const entry of entries) {
       const srcPath = path.join(src, entry.name);
       const destPath = path.join(dest, entry.name);
-      await copyAndTransformSkills(srcPath, destPath, projectRoot);
+      await copyAndTransformSkills(srcPath, destPath, projectRoot, depth + 1);
     }
   } else {
     // Check if this is a SKILL.md file that needs transformation
@@ -179,6 +214,7 @@ async function copyAndTransformSkills(
 /**
  * Expands @filename references in skill content by replacing them with actual file content.
  * Strips frontmatter from referenced files to avoid duplication.
+ * Security: Validates that referenced files are within the project root to prevent path traversal.
  */
 async function expandAtFilenameReferences(
   content: string,
@@ -191,6 +227,7 @@ async function expandAtFilenameReferences(
 
   let transformed = content;
   const matches = Array.from(content.matchAll(atFilenamePattern));
+  const normalizedProjectRoot = path.resolve(projectRoot);
 
   for (const match of matches) {
     const fileReference = match[0]; // e.g., "@.claude/rules/foo.mdc"
@@ -199,6 +236,14 @@ async function expandAtFilenameReferences(
     try {
       // Resolve path relative to project root
       const absolutePath = path.resolve(projectRoot, filePath);
+
+      // Security: Validate path is within project root to prevent path traversal attacks
+      // e.g., @../../../etc/passwd would resolve outside project
+      if (!absolutePath.startsWith(normalizedProjectRoot + path.sep)) {
+        // Skip references outside project root silently for security
+        continue;
+      }
+
       const fileContent = await fs.readFile(absolutePath, 'utf8');
 
       // Parse and strip frontmatter from the referenced file

@@ -435,58 +435,6 @@ export async function processSingleConfiguration(
 }
 
 /**
- * Adds Skillz MCP server to skillerMcpJson if skills exist and any agent needs it.
- * Returns augmented MCP config or original if no changes needed.
- */
-async function addSkillzMcpServerIfNeeded(
-  skillerMcpJson: Record<string, unknown> | null,
-  projectRoot: string,
-  agents: IAgent[],
-  verbose: boolean,
-): Promise<Record<string, unknown> | null> {
-  // Check if any agent supports MCP stdio but not native skills
-  // Agents with native skills support (Claude Code, Cursor) are automatically excluded
-  const hasAgentNeedingSkillz = agents.some(
-    (agent) => agent.supportsMcpStdio?.() && !agent.supportsNativeSkills?.(),
-  );
-
-  if (!hasAgentNeedingSkillz) {
-    return skillerMcpJson;
-  }
-
-  // Check if .skillz directory exists
-  try {
-    const { SKILLZ_DIR } = await import('../constants');
-    const skillzPath = path.join(projectRoot, SKILLZ_DIR);
-    await fs.access(skillzPath);
-
-    // Skills exist, add Skillz MCP server
-    const { buildSkillzMcpConfig } = await import('./SkillsProcessor');
-    const skillzMcp = buildSkillzMcpConfig(projectRoot);
-
-    // Initialize empty config if null
-    const baseConfig = skillerMcpJson || { mcpServers: {} };
-    const mcpServers = (baseConfig.mcpServers as Record<string, unknown>) || {};
-
-    logVerbose(
-      'Adding Skillz MCP server to configuration for agents that need it',
-      verbose,
-    );
-
-    return {
-      ...baseConfig,
-      mcpServers: {
-        ...mcpServers,
-        ...skillzMcp,
-      },
-    };
-  } catch {
-    // No .skillz directory, return original config
-    return skillerMcpJson;
-  }
-}
-
-/**
  * Applies configurations to the selected agents (internal function).
  * @param agents Array of agents to process
  * @param concatenatedRules Concatenated rule content
@@ -508,25 +456,13 @@ export async function applyConfigurationsToAgents(
   cliMcpEnabled = true,
   cliMcpStrategy?: McpStrategy,
   backup = true,
-  skillsEnabled = true,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _skillsEnabled = true,
   ruleFiles?: { path: string; content: string }[],
   skillerDir?: string,
 ): Promise<string[]> {
   const generatedPaths: string[] = [];
   let agentsMdWritten = false;
-
-  // Add Skillz MCP server to skillerMcpJson if skills are enabled
-  // This must happen before calling agent.applySkillerConfig() so that agents
-  // that handle MCP internally (e.g. Codex, Gemini) receive the Skillz server
-  let augmentedSkillerMcpJson = skillerMcpJson;
-  if (skillsEnabled && !dryRun) {
-    augmentedSkillerMcpJson = await addSkillzMcpServerIfNeeded(
-      skillerMcpJson,
-      projectRoot,
-      agents,
-      verbose,
-    );
-  }
 
   for (const agent of agents) {
     logInfo(`Applying rules for ${agent.getName()}...`, dryRun);
@@ -566,7 +502,7 @@ export async function applyConfigurationsToAgents(
         }
       }
       let finalAgentConfig = agentConfig;
-      if (agent.getIdentifier() === 'augmentcode' && augmentedSkillerMcpJson) {
+      if (agent.getIdentifier() === 'augmentcode' && skillerMcpJson) {
         const resolvedStrategy =
           cliMcpStrategy ??
           agentConfig?.mcp?.strategy ??
@@ -586,7 +522,7 @@ export async function applyConfigurationsToAgents(
         await agent.applySkillerConfig(
           concatenatedRules,
           projectRoot,
-          augmentedSkillerMcpJson,
+          skillerMcpJson,
           finalAgentConfig,
           backup,
           ruleFiles,
@@ -612,7 +548,7 @@ export async function applyConfigurationsToAgents(
       agent,
       agentConfig,
       config,
-      augmentedSkillerMcpJson,
+      skillerMcpJson,
       projectRoot,
       generatedPaths,
       verbose,
@@ -620,7 +556,6 @@ export async function applyConfigurationsToAgents(
       cliMcpEnabled,
       cliMcpStrategy,
       backup,
-      skillsEnabled,
     );
   }
 
@@ -639,7 +574,6 @@ async function handleMcpConfiguration(
   cliMcpEnabled = true,
   cliMcpStrategy?: McpStrategy,
   backup = true,
-  skillsEnabled = true,
 ): Promise<void> {
   if (!agentSupportsMcp(agent)) {
     logVerbose(
@@ -657,81 +591,9 @@ async function handleMcpConfiguration(
     return;
   }
 
-  let filteredMcpJson = skillerMcpJson
+  const filteredMcpJson = skillerMcpJson
     ? filterMcpConfigForAgent(skillerMcpJson, agent)
     : null;
-
-  // Remove Skillz MCP server for agents with native skills support
-  if (filteredMcpJson && agent.supportsNativeSkills?.()) {
-    const { SKILLZ_MCP_SERVER_NAME } = await import('../constants');
-    if (
-      filteredMcpJson.mcpServers &&
-      typeof filteredMcpJson.mcpServers === 'object'
-    ) {
-      const mcpServers = { ...filteredMcpJson.mcpServers } as Record<
-        string,
-        unknown
-      >;
-      delete mcpServers[SKILLZ_MCP_SERVER_NAME];
-      // If no servers remain after removal, set to null to skip file generation
-      if (Object.keys(mcpServers).length === 0) {
-        filteredMcpJson = null;
-      } else {
-        filteredMcpJson = {
-          ...filteredMcpJson,
-          mcpServers,
-        };
-      }
-      logVerboseInfo(
-        `Removed Skillz MCP server for ${agent.getName()} (has native skills support)`,
-        verbose,
-        dryRun,
-      );
-    }
-  }
-
-  // Add Skillz MCP server for agents that support stdio but not native skills
-  // Only add if skills are enabled
-  // Agents with native skills support (Claude Code, Cursor) are automatically excluded
-  if (
-    skillsEnabled &&
-    agent.supportsMcpStdio?.() &&
-    !agent.supportsNativeSkills?.()
-  ) {
-    // Check if .skillz directory exists
-    try {
-      const { SKILLZ_DIR } = await import('../constants');
-      const skillzPath = path.join(projectRoot, SKILLZ_DIR);
-      await fs.access(skillzPath);
-
-      // Skills exist, add Skillz MCP server
-      const { buildSkillzMcpConfig } = await import('./SkillsProcessor');
-      const skillzMcp = buildSkillzMcpConfig(projectRoot);
-
-      // Merge Skillz server into MCP config
-      // Initialize empty config if null
-      if (!filteredMcpJson) {
-        filteredMcpJson = { mcpServers: {} };
-      }
-      const mcpServers =
-        (filteredMcpJson.mcpServers as Record<string, unknown>) || {};
-      filteredMcpJson = {
-        ...filteredMcpJson,
-        mcpServers: {
-          ...mcpServers,
-          ...skillzMcp,
-        },
-      };
-
-      logVerboseInfo(
-        `Added Skillz MCP server for ${agent.getName()}`,
-        verbose,
-        dryRun,
-      );
-    } catch {
-      // No .skillz directory, skip adding Skillz server
-    }
-  }
 
   // Skip if no MCP config or if mcpServers is empty
   const hasServers =

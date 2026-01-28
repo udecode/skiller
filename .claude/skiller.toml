@@ -15,11 +15,9 @@ enabled = false
 
 # --- Global Configuration ---
 
-# Skills support (manages .ruler/skills/ → .claude/skills/ propagation)
+# Skills support
 [skills]
 enabled = true
-generate_from_rules = true
-prune = true
 
 # Automatic .gitignore management
 [gitignore]

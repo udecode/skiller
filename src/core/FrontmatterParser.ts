@@ -43,7 +43,10 @@ export function parseFrontmatter(content: string): ParsedContent {
 
   try {
     // Try parsing YAML as-is first
-    const parsed = yaml.load(yamlContent) as Record<string, unknown> | null;
+    // Use JSON_SCHEMA for safety - prevents YAML-specific type coercion attacks
+    const parsed = yaml.load(yamlContent, {
+      schema: yaml.JSON_SCHEMA,
+    }) as Record<string, unknown> | null;
     return extractFrontmatter(parsed, body);
   } catch {
     // YAML parsing failed - try to fix common issues
@@ -70,7 +73,9 @@ export function parseFrontmatter(content: string): ParsedContent {
 
       // Try parsing again with fixed YAML
       if (fixedYaml !== yamlContent) {
-        const parsed = yaml.load(fixedYaml) as Record<string, unknown> | null;
+        const parsed = yaml.load(fixedYaml, {
+          schema: yaml.JSON_SCHEMA,
+        }) as Record<string, unknown> | null;
         return extractFrontmatter(parsed, body);
       }
     } catch {

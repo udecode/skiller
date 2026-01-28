@@ -17,7 +17,7 @@ describe("Skills Configuration Precedence", () => {
 		await fs.rm(tmpDir, { recursive: true, force: true });
 	});
 
-	it("honors skills.enabled = false in skiller.toml", async () => {
+	it("honors skills.enabled = false in skiller.toml (skips propagation)", async () => {
 		// Setup .claude directory with skills
 		const skillerDir = path.join(tmpDir, ".claude");
 		const skillsDir = path.join(skillerDir, "skills");
@@ -37,6 +37,8 @@ enabled = false
 		);
 
 		// Apply without CLI flag (should respect TOML config)
+		// In the new architecture, skills.enabled = false just skips propagation
+		// but does NOT delete .claude/skills since it's the source of truth
 		await applyAllAgentConfigs(
 			tmpDir,
 			["claude"], // Just test with one agent
@@ -52,9 +54,9 @@ enabled = false
 			undefined, // No CLI skills flag
 		);
 
-		// Skills should NOT be copied because TOML says enabled = false
+		// Skills directory should STILL exist (source of truth is never deleted)
 		const claudeSkillsDir = path.join(tmpDir, ".claude", "skills");
-		await expect(fs.access(claudeSkillsDir)).rejects.toThrow();
+		await expect(fs.access(claudeSkillsDir)).resolves.toBeUndefined();
 	});
 
 	it("honors skills.enabled = true in skiller.toml", async () => {
@@ -92,7 +94,7 @@ enabled = true
 			undefined, // No CLI skills flag
 		);
 
-		// Skills SHOULD be copied because TOML says enabled = true
+		// Skills SHOULD be in place
 		const claudeSkillsDir = path.join(tmpDir, ".claude", "skills");
 		const copiedSkill = path.join(
 			claudeSkillsDir,
@@ -102,7 +104,7 @@ enabled = true
 		expect(await fs.readFile(copiedSkill, "utf8")).toBe("# Test Skill");
 	});
 
-	it("CLI flag overrides skiller.toml setting", async () => {
+	it("CLI flag overrides skiller.toml setting (skips propagation when disabled)", async () => {
 		// Setup .claude directory with skills
 		const skillerDir = path.join(tmpDir, ".claude");
 		const skillsDir = path.join(skillerDir, "skills");
@@ -122,6 +124,8 @@ enabled = true
 		);
 
 		// Apply with CLI flag = false (should override TOML)
+		// In the new architecture, this just skips propagation
+		// but does NOT delete .claude/skills since it's the source of truth
 		await applyAllAgentConfigs(
 			tmpDir,
 			["claude"], // Just test with one agent
@@ -137,9 +141,9 @@ enabled = true
 			false, // CLI: --no-skills
 		);
 
-		// Skills should NOT be copied because CLI overrides TOML
+		// Skills directory should STILL exist (source of truth is never deleted)
 		const claudeSkillsDir = path.join(tmpDir, ".claude", "skills");
-		await expect(fs.access(claudeSkillsDir)).rejects.toThrow();
+		await expect(fs.access(claudeSkillsDir)).resolves.toBeUndefined();
 	});
 
 	it("defaults to enabled when no config is set", async () => {
@@ -171,7 +175,7 @@ enabled = true
 			undefined, // No CLI skills flag
 		);
 
-		// Skills SHOULD be copied because default is enabled
+		// Skills SHOULD be in place because default is enabled
 		const claudeSkillsDir = path.join(tmpDir, ".claude", "skills");
 		const copiedSkill = path.join(
 			claudeSkillsDir,
