@@ -227,12 +227,12 @@ This is the skill body.
 			expect(result.synced).toContain("my-skill");
 			expect(result.warnings).toHaveLength(0);
 
-			// Verify SKILL.md was created with @reference body
+			// Verify SKILL.md was created with @reference body (absolute path)
 			const skillMdPath = path.join(skillFolder, SKILL_MD_FILENAME);
 			const content = await fs.readFile(skillMdPath, "utf8");
 			expect(content).toContain("name: my-skill");
 			expect(content).toContain("description: My test skill");
-			expect(content).toContain("@./my-skill.mdc");
+			expect(content).toContain("@.claude/skills/my-skill/my-skill.mdc");
 			expect(content).not.toContain("synced:");
 		});
 
@@ -241,7 +241,7 @@ This is the skill body.
 			const skillFolder = path.join(skillsDir, "synced-skill");
 			await fs.mkdir(skillFolder, { recursive: true });
 
-			// Create existing SKILL.md with @reference body
+			// Create existing SKILL.md with @reference body (old relative path - should be migrated)
 			await fs.writeFile(
 				path.join(skillFolder, SKILL_MD_FILENAME),
 				`---
@@ -266,13 +266,15 @@ description: New description from mdc
 
 			expect(result.synced).toContain("synced-skill");
 
-			// Verify SKILL.md frontmatter was updated from .mdc
+			// Verify SKILL.md frontmatter was updated from .mdc and path migrated to absolute
 			const content = await fs.readFile(
 				path.join(skillFolder, SKILL_MD_FILENAME),
 				"utf8",
 			);
 			expect(content).toContain("description: New description from mdc");
-			expect(content).toContain("@./synced-skill.mdc");
+			expect(content).toContain(
+				"@.claude/skills/synced-skill/synced-skill.mdc",
+			);
 			expect(content).not.toContain("synced:");
 		});
 
@@ -304,12 +306,14 @@ description: Original skill
 			expect(mdcContent).toContain("description: Original skill");
 			expect(mdcContent).toContain("# Original Content");
 
-			// Verify SKILL.md was updated to @reference
+			// Verify SKILL.md was updated to @reference (absolute path)
 			const skillContent = await fs.readFile(
 				path.join(skillFolder, SKILL_MD_FILENAME),
 				"utf8",
 			);
-			expect(skillContent).toContain("@./unsynced-skill.mdc");
+			expect(skillContent).toContain(
+				"@.claude/skills/unsynced-skill/unsynced-skill.mdc",
+			);
 			expect(skillContent).not.toContain("synced:");
 		});
 
@@ -345,12 +349,14 @@ description: Skill to migrate
 				.catch(() => false);
 			expect(rootMdcExists).toBe(false);
 
-			// Verify SKILL.md was created with @reference
+			// Verify SKILL.md was created with @reference (absolute path)
 			const skillMdContent = await fs.readFile(
 				path.join(skillsDir, "migrate-skill", SKILL_MD_FILENAME),
 				"utf8",
 			);
-			expect(skillMdContent).toContain("@./migrate-skill.mdc");
+			expect(skillMdContent).toContain(
+				"@.claude/skills/migrate-skill/migrate-skill.mdc",
+			);
 		});
 
 		it("handles dry run mode", async () => {
@@ -439,12 +445,14 @@ description: My skill description
 			expect(result.warnings).toHaveLength(0);
 			expect(result.synced).toContain("my-skill");
 
-			// SKILL.md should now point to sibling .mdc
+			// SKILL.md should now point to sibling .mdc (absolute path)
 			const skillMdContent = await fs.readFile(
 				path.join(skillFolder, SKILL_MD_FILENAME),
 				"utf8",
 			);
-			expect(skillMdContent).toContain("@./my-skill.mdc");
+			expect(skillMdContent).toContain(
+				"@.claude/skills/my-skill/my-skill.mdc",
+			);
 			expect(skillMdContent).not.toContain("@.claude/rules");
 
 			// Sibling .mdc should be created with content from rules
@@ -454,6 +462,117 @@ description: My skill description
 			);
 			expect(siblingMdcContent).toContain("# My Skill Content");
 			expect(siblingMdcContent).toContain("description: My skill description");
+		});
+
+		it("skips SKILL.md generation for .mdc files with alwaysApply: true", async () => {
+			const skillsDir = path.join(tmpDir, ".claude", "skills");
+			const skillFolder = path.join(skillsDir, "always-apply-rule");
+			await fs.mkdir(skillFolder, { recursive: true });
+
+			// Create .mdc with alwaysApply: true (this is a Cursor rule, not a skill)
+			await fs.writeFile(
+				path.join(skillFolder, "always-apply-rule.mdc"),
+				`---
+description: A Cursor-style rule
+alwaysApply: true
+---
+
+# This is a rule, not a skill`,
+			);
+
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			// Should NOT be synced (alwaysApply rules skip SKILL.md generation)
+			expect(result.synced).not.toContain("always-apply-rule");
+
+			// SKILL.md should NOT exist
+			const skillMdExists = await fs
+				.access(path.join(skillFolder, SKILL_MD_FILENAME))
+				.then(() => true)
+				.catch(() => false);
+			expect(skillMdExists).toBe(false);
+		});
+	});
+
+	describe("copyMdcFilesFromRules", () => {
+		it("copies .mdc files from rules to skills/name/name.mdc", async () => {
+			const { copyMdcFilesFromRules } = await import(
+				"../src/core/SkillsProcessor"
+			);
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+			const skillsDir = path.join(skillerDir, "skills");
+
+			await fs.mkdir(rulesDir, { recursive: true });
+			await fs.mkdir(skillsDir, { recursive: true });
+
+			// Create .mdc file in rules
+			await fs.writeFile(
+				path.join(rulesDir, "my-rule.mdc"),
+				`---
+description: My rule
+alwaysApply: true
+---
+
+# Rule Content`,
+			);
+
+			const result = await copyMdcFilesFromRules(skillerDir, false, false);
+
+			expect(result).toContain("my-rule");
+
+			// Verify .mdc was copied to skills/my-rule/my-rule.mdc
+			const copiedMdc = await fs.readFile(
+				path.join(skillsDir, "my-rule", "my-rule.mdc"),
+				"utf8",
+			);
+			expect(copiedMdc).toContain("alwaysApply: true");
+			expect(copiedMdc).toContain("# Rule Content");
+		});
+
+		it("does not create SKILL.md for copied .mdc files", async () => {
+			const { copyMdcFilesFromRules, syncMdcToSkillMd } = await import(
+				"../src/core/SkillsProcessor"
+			);
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+			const skillsDir = path.join(skillerDir, "skills");
+
+			await fs.mkdir(rulesDir, { recursive: true });
+			await fs.mkdir(skillsDir, { recursive: true });
+
+			// Create .mdc file in rules with alwaysApply
+			await fs.writeFile(
+				path.join(rulesDir, "cursor-rule.mdc"),
+				`---
+description: A Cursor rule
+alwaysApply: true
+---
+
+# Rule content`,
+			);
+
+			// Copy from rules to skills
+			await copyMdcFilesFromRules(skillerDir, false, false);
+
+			// Run sync - should NOT generate SKILL.md for alwaysApply rules
+			await syncMdcToSkillMd(skillsDir, false, false);
+
+			// SKILL.md should NOT exist
+			const skillMdExists = await fs
+				.access(path.join(skillsDir, "cursor-rule", SKILL_MD_FILENAME))
+				.then(() => true)
+				.catch(() => false);
+			expect(skillMdExists).toBe(false);
+
+			// But the .mdc should exist
+			const mdcExists = await fs
+				.access(path.join(skillsDir, "cursor-rule", "cursor-rule.mdc"))
+				.then(() => true)
+				.catch(() => false);
+			expect(mdcExists).toBe(true);
 		});
 	});
 

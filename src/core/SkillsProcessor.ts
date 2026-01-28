@@ -134,10 +134,22 @@ export async function syncMdcToSkillMd(
 
     try {
       if (siblingMdcContent !== null && skillMdContent === null) {
-        // Case 1: Sibling .mdc exists but no SKILL.md → generate SKILL.md with @reference
+        // Case 1: Sibling .mdc exists but no SKILL.md
         const { frontmatter: mdcFrontmatter } =
           parseFrontmatter(siblingMdcContent);
 
+        // Skip SKILL.md generation for .mdc files with alwaysApply: true
+        // These are Cursor-style rules, not Claude Code skills
+        if (mdcFrontmatter?.alwaysApply === true) {
+          logVerboseInfo(
+            `Skipping SKILL.md generation for ${skillName} (alwaysApply rule)`,
+            verbose,
+            dryRun,
+          );
+          continue;
+        }
+
+        // Generate SKILL.md with @reference (absolute path)
         const skillFrontmatter = {
           name: skillName,
           description: mdcFrontmatter?.description || `Skill: ${skillName}`,
@@ -147,7 +159,7 @@ export async function syncMdcToSkillMd(
 ${yaml.dump(skillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
-@./${skillName}.mdc
+@.claude/skills/${skillName}/${skillName}.mdc
 `;
 
         if (dryRun) {
@@ -159,7 +171,7 @@ ${yaml.dump(skillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
         } else {
           await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
           logVerboseInfo(
-            `Generated ${skillName}/SKILL.md with @./${skillName}.mdc reference`,
+            `Generated ${skillName}/SKILL.md with @.claude/skills/${skillName}/${skillName}.mdc reference`,
             verbose,
             dryRun,
           );
@@ -173,27 +185,41 @@ ${yaml.dump(skillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 
         if (refCheck.isReference) {
           // Case 2: SKILL.md is @reference → source file is truth
-          if (refCheck.referencePath === `./${skillName}.mdc`) {
+          // Check for both relative and absolute sibling reference patterns
+          const isRelativeSiblingRef =
+            refCheck.referencePath === `./${skillName}.mdc`;
+          const isAbsoluteSiblingRef =
+            refCheck.referencePath ===
+            `.claude/skills/${skillName}/${skillName}.mdc`;
+
+          if (isRelativeSiblingRef || isAbsoluteSiblingRef) {
             // Sibling reference pattern - validate/update frontmatter if .mdc changed
             if (siblingMdcContent !== null) {
               const { frontmatter: mdcFrontmatter } =
                 parseFrontmatter(siblingMdcContent);
 
               // Update SKILL.md frontmatter if description changed in .mdc
-              if (
-                mdcFrontmatter?.description &&
-                mdcFrontmatter.description !== skillFrontmatter?.description
-              ) {
+              // Also migrate from relative to absolute path if needed
+              const needsUpdate =
+                (mdcFrontmatter?.description &&
+                  mdcFrontmatter.description !==
+                    skillFrontmatter?.description) ||
+                isRelativeSiblingRef; // Migrate old relative refs to absolute
+
+              if (needsUpdate) {
                 const newFrontmatter = {
                   name: skillFrontmatter?.name || skillName,
-                  description: mdcFrontmatter.description,
+                  description:
+                    mdcFrontmatter?.description ||
+                    skillFrontmatter?.description ||
+                    `Skill: ${skillName}`,
                 };
 
                 const newSkillMd = `---
 ${yaml.dump(newFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
-@./${skillName}.mdc
+@.claude/skills/${skillName}/${skillName}.mdc
 `;
 
                 if (dryRun) {
@@ -242,10 +268,7 @@ ${yaml.dump(newFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 
               // Create sibling .mdc with the content
               let mdcContent: string;
-              if (
-                refFrontmatter &&
-                Object.keys(refFrontmatter).length > 0
-              ) {
+              if (refFrontmatter && Object.keys(refFrontmatter).length > 0) {
                 const mdcFrontmatterData: Record<string, unknown> = {};
                 if (refFrontmatter.description) {
                   mdcFrontmatterData.description = refFrontmatter.description;
@@ -271,7 +294,7 @@ ${refBody}
                 mdcContent = referencedContent;
               }
 
-              // Update SKILL.md to point to sibling .mdc
+              // Update SKILL.md to point to sibling .mdc (absolute path)
               const newFrontmatter = {
                 name: skillFrontmatter?.name || skillName,
                 description:
@@ -284,7 +307,7 @@ ${refBody}
 ${yaml.dump(newFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
-@./${skillName}.mdc
+@.claude/skills/${skillName}/${skillName}.mdc
 `;
 
               if (dryRun) {
@@ -330,7 +353,7 @@ ${skillBody}
             mdcContent = skillBody;
           }
 
-          // Update SKILL.md to @reference
+          // Update SKILL.md to @reference (absolute path)
           const newSkillFrontmatter = {
             name: skillFrontmatter?.name || skillName,
             description: skillFrontmatter?.description || `Skill: ${skillName}`,
@@ -340,7 +363,7 @@ ${skillBody}
 ${yaml.dump(newSkillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
-@./${skillName}.mdc
+@.claude/skills/${skillName}/${skillName}.mdc
 `;
 
           if (dryRun) {
@@ -574,4 +597,73 @@ export async function copySkillFoldersFromRules(
     verbose,
     dryRun,
   );
+}
+
+/**
+ * Copies standalone .mdc files from .claude/rules to .claude/skills/name/name.mdc.
+ * These are rule files (not skill folders) that should be available in the skills directory.
+ * No SKILL.md is generated - these remain as .mdc files only.
+ */
+export async function copyMdcFilesFromRules(
+  skillerDir: string,
+  verbose: boolean,
+  dryRun: boolean,
+): Promise<string[]> {
+  const rulesDir = path.join(skillerDir, 'rules');
+  const skillsDir = path.join(skillerDir, 'skills');
+  const copiedNames: string[] = [];
+
+  // Check if rules directory exists
+  try {
+    await fs.access(rulesDir);
+  } catch {
+    return copiedNames;
+  }
+
+  const entries = await fs.readdir(rulesDir, { withFileTypes: true });
+
+  // Find .mdc files at rules root (not in subdirectories)
+  const mdcFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.mdc'));
+
+  for (const mdcFile of mdcFiles) {
+    const skillName = path.basename(mdcFile.name, '.mdc');
+    const sourcePath = path.join(rulesDir, mdcFile.name);
+    const targetDir = path.join(skillsDir, skillName);
+    const targetPath = path.join(targetDir, mdcFile.name);
+
+    try {
+      if (dryRun) {
+        logVerboseInfo(
+          `DRY RUN: Would copy ${mdcFile.name} from rules to skills/${skillName}/${mdcFile.name}`,
+          verbose,
+          dryRun,
+        );
+      } else {
+        await fs.mkdir(targetDir, { recursive: true });
+        const content = await fs.readFile(sourcePath, 'utf8');
+        await fs.writeFile(targetPath, content, 'utf8');
+        logVerboseInfo(
+          `Copied ${mdcFile.name} from rules to skills/${skillName}/${mdcFile.name}`,
+          verbose,
+          dryRun,
+        );
+      }
+      copiedNames.push(skillName);
+    } catch (err) {
+      logWarn(
+        `Failed to copy ${mdcFile.name}: ${(err as Error).message}`,
+        dryRun,
+      );
+    }
+  }
+
+  if (copiedNames.length > 0) {
+    logVerboseInfo(
+      `Copied ${copiedNames.length} .mdc file(s) from rules to skills`,
+      verbose,
+      dryRun,
+    );
+  }
+
+  return copiedNames;
 }
