@@ -134,21 +134,14 @@ export async function applyAllAgentConfigs(
       skillsEnabled,
       rootConfig.skills?.enabled,
     );
-    const {
-      propagateSkills,
-      copySkillFoldersFromRules,
-      copyMdcFilesFromRules,
-    } = await import('./core/SkillsProcessor');
+    const { propagateSkills, migrateRulesToSkills } = await import(
+      './core/SkillsProcessor'
+    );
 
-    // Copy skill folders and .mdc files from rules to skills
+    // Migrate content from .claude/rules to .claude/skills (only if rules exists)
     if (skillsEnabledResolved) {
       for (const configEntry of hierarchicalConfigs) {
-        await copySkillFoldersFromRules(
-          configEntry.skillerDir,
-          verbose,
-          dryRun,
-        );
-        await copyMdcFilesFromRules(configEntry.skillerDir, verbose, dryRun);
+        await migrateRulesToSkills(configEntry.skillerDir, verbose, dryRun);
       }
     }
 
@@ -217,16 +210,13 @@ export async function applyAllAgentConfigs(
       skillsEnabled,
       singleConfig.config.skills?.enabled,
     );
-    const {
-      propagateSkills,
-      copySkillFoldersFromRules,
-      copyMdcFilesFromRules,
-    } = await import('./core/SkillsProcessor');
+    const { propagateSkills, migrateRulesToSkills } = await import(
+      './core/SkillsProcessor'
+    );
 
-    // Copy skill folders and .mdc files from rules to skills
+    // Migrate content from .claude/rules to .claude/skills (only if rules exists)
     if (skillsEnabledResolved) {
-      await copySkillFoldersFromRules(singleConfig.skillerDir, verbose, dryRun);
-      await copyMdcFilesFromRules(singleConfig.skillerDir, verbose, dryRun);
+      await migrateRulesToSkills(singleConfig.skillerDir, verbose, dryRun);
     }
 
     // Always call propagateSkills - it handles cleanup when disabled

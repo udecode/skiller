@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { SkillInfo } from '../types';
 import { SKILL_MD_FILENAME, MAX_RECURSION_DEPTH } from '../constants';
+import { parseFrontmatter } from './FrontmatterParser';
 
 /**
  * Checks if a directory contains a SKILL.md file.
@@ -11,6 +12,32 @@ export async function hasSkillMd(dirPath: string): Promise<boolean> {
     const skillMdPath = path.join(dirPath, SKILL_MD_FILENAME);
     await fs.access(skillMdPath);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks if a directory contains an .mdc file with alwaysApply: true.
+ * These directories are valid without SKILL.md since alwaysApply rules
+ * are Cursor-style rules, not Claude Code skills.
+ */
+export async function hasAlwaysApplyMdc(dirPath: string): Promise<boolean> {
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.mdc')) {
+        const mdcPath = path.join(dirPath, entry.name);
+        const content = await fs.readFile(mdcPath, 'utf8');
+        const { frontmatter } = parseFrontmatter(content);
+
+        if (frontmatter?.alwaysApply === true) {
+          return true;
+        }
+      }
+    }
+    return false;
   } catch {
     return false;
   }
@@ -99,10 +126,15 @@ export async function walkSkillsTree(
           // This is a grouping directory, recurse into it
           await walk(entryPath, entryRelativePath, depth + 1);
         } else {
-          // This is neither a skill nor a grouping directory - warn about it
-          warnings.push(
-            `Directory '${entryRelativePath}' in .claude/skills has no SKILL.md and contains no sub-skills. It may be malformed or stray.`,
-          );
+          // Check if this is a valid alwaysApply directory (no SKILL.md expected)
+          const hasAlwaysApply = await hasAlwaysApplyMdc(entryPath);
+
+          if (!hasAlwaysApply) {
+            // This is neither a skill nor a grouping directory - warn about it
+            warnings.push(
+              `Directory '${entryRelativePath}' in .claude/skills has no SKILL.md and contains no sub-skills. It may be malformed or stray.`,
+            );
+          }
         }
       }
     } catch (err) {

@@ -538,6 +538,35 @@ async function findSkillFoldersInRules(
 }
 
 /**
+ * Migrates all content from .claude/rules to .claude/skills and deletes the rules directory.
+ * This is the main entry point for rules migration - it only processes if rules directory exists.
+ */
+export async function migrateRulesToSkills(
+  skillerDir: string,
+  verbose: boolean,
+  dryRun: boolean,
+): Promise<void> {
+  const rulesDir = path.join(skillerDir, 'rules');
+
+  // Check if rules directory exists - early exit if not
+  try {
+    await fs.access(rulesDir);
+  } catch {
+    // No rules directory - nothing to migrate
+    return;
+  }
+
+  // Copy skill folders (folders with SKILL.md)
+  await copySkillFoldersFromRules(skillerDir, verbose, dryRun);
+
+  // Copy standalone .mdc files
+  await copyMdcFilesFromRules(skillerDir, verbose, dryRun);
+
+  // Delete the rules directory after migration
+  await deleteRulesDir(skillerDir, verbose, dryRun);
+}
+
+/**
  * Copies skill folders (folders containing SKILL.md) from .claude/rules to .claude/skills.
  * This allows users to organize skills in the rules directory and have them automatically
  * propagated to the skills directory during apply.
@@ -632,6 +661,38 @@ export async function copyMdcFilesFromRules(
     const targetPath = path.join(targetDir, mdcFile.name);
 
     try {
+      const content = await fs.readFile(sourcePath, 'utf8');
+
+      // Parse and clean frontmatter - remove globs and alwaysApply: false
+      const { frontmatter, body } = parseFrontmatter(content);
+      let cleanedContent: string;
+
+      if (frontmatter && Object.keys(frontmatter).length > 0) {
+        const cleanedFrontmatter: Record<string, unknown> = {};
+
+        // Only keep description and alwaysApply: true
+        if (frontmatter.description) {
+          cleanedFrontmatter.description = frontmatter.description;
+        }
+        if (frontmatter.alwaysApply === true) {
+          cleanedFrontmatter.alwaysApply = true;
+        }
+        // Note: globs and alwaysApply: false are intentionally omitted
+
+        if (Object.keys(cleanedFrontmatter).length > 0) {
+          cleanedContent = `---
+${yaml.dump(cleanedFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
+---
+
+${body}
+`;
+        } else {
+          cleanedContent = body;
+        }
+      } else {
+        cleanedContent = content;
+      }
+
       if (dryRun) {
         logVerboseInfo(
           `DRY RUN: Would copy ${mdcFile.name} from rules to skills/${skillName}/${mdcFile.name}`,
@@ -640,8 +701,7 @@ export async function copyMdcFilesFromRules(
         );
       } else {
         await fs.mkdir(targetDir, { recursive: true });
-        const content = await fs.readFile(sourcePath, 'utf8');
-        await fs.writeFile(targetPath, content, 'utf8');
+        await fs.writeFile(targetPath, cleanedContent, 'utf8');
         logVerboseInfo(
           `Copied ${mdcFile.name} from rules to skills/${skillName}/${mdcFile.name}`,
           verbose,
@@ -666,4 +726,48 @@ export async function copyMdcFilesFromRules(
   }
 
   return copiedNames;
+}
+
+/**
+ * Deletes the .claude/rules directory after content has been migrated to .claude/skills.
+ * This completes the migration from the old rules-based structure to the new skills-based structure.
+ */
+export async function deleteRulesDir(
+  skillerDir: string,
+  verbose: boolean,
+  dryRun: boolean,
+): Promise<boolean> {
+  const rulesDir = path.join(skillerDir, 'rules');
+
+  // Check if rules directory exists
+  try {
+    await fs.access(rulesDir);
+  } catch {
+    return false; // No rules directory to delete
+  }
+
+  if (dryRun) {
+    logVerboseInfo(
+      `DRY RUN: Would delete .claude/rules directory after migration`,
+      verbose,
+      dryRun,
+    );
+    return true;
+  }
+
+  try {
+    await fs.rm(rulesDir, { recursive: true, force: true });
+    logVerboseInfo(
+      `Deleted .claude/rules directory after migration to .claude/skills`,
+      verbose,
+      dryRun,
+    );
+    return true;
+  } catch (err) {
+    logWarn(
+      `Failed to delete .claude/rules: ${(err as Error).message}`,
+      dryRun,
+    );
+    return false;
+  }
 }

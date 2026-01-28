@@ -495,7 +495,7 @@ alwaysApply: true
 	});
 
 	describe("copyMdcFilesFromRules", () => {
-		it("copies .mdc files from rules to skills/name/name.mdc", async () => {
+		it("copies .mdc files from rules to skills/name/name.mdc and strips globs/alwaysApply:false", async () => {
 			const { copyMdcFilesFromRules } = await import(
 				"../src/core/SkillsProcessor"
 			);
@@ -507,12 +507,14 @@ alwaysApply: true
 			await fs.mkdir(rulesDir, { recursive: true });
 			await fs.mkdir(skillsDir, { recursive: true });
 
-			// Create .mdc file in rules
+			// Create .mdc file in rules with globs and alwaysApply: true
 			await fs.writeFile(
 				path.join(rulesDir, "my-rule.mdc"),
 				`---
 description: My rule
 alwaysApply: true
+globs:
+  - "**/*.ts"
 ---
 
 # Rule Content`,
@@ -527,8 +529,52 @@ alwaysApply: true
 				path.join(skillsDir, "my-rule", "my-rule.mdc"),
 				"utf8",
 			);
+			// alwaysApply: true should be kept
 			expect(copiedMdc).toContain("alwaysApply: true");
+			expect(copiedMdc).toContain("description: My rule");
 			expect(copiedMdc).toContain("# Rule Content");
+			// globs should be stripped (not useful in skills)
+			expect(copiedMdc).not.toContain("globs");
+		});
+
+		it("strips alwaysApply: false from frontmatter when copying", async () => {
+			const { copyMdcFilesFromRules } = await import(
+				"../src/core/SkillsProcessor"
+			);
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+			const skillsDir = path.join(skillerDir, "skills");
+
+			await fs.mkdir(rulesDir, { recursive: true });
+			await fs.mkdir(skillsDir, { recursive: true });
+
+			// Create .mdc file with alwaysApply: false (should be stripped)
+			await fs.writeFile(
+				path.join(rulesDir, "conditional-rule.mdc"),
+				`---
+description: A conditional rule
+alwaysApply: false
+globs:
+  - "src/**/*.ts"
+---
+
+# Conditional Content`,
+			);
+
+			await copyMdcFilesFromRules(skillerDir, false, false);
+
+			const copiedMdc = await fs.readFile(
+				path.join(skillsDir, "conditional-rule", "conditional-rule.mdc"),
+				"utf8",
+			);
+			// alwaysApply: false should be stripped
+			expect(copiedMdc).not.toContain("alwaysApply");
+			// globs should be stripped
+			expect(copiedMdc).not.toContain("globs");
+			// description should be kept
+			expect(copiedMdc).toContain("description: A conditional rule");
+			expect(copiedMdc).toContain("# Conditional Content");
 		});
 
 		it("does not create SKILL.md for copied .mdc files", async () => {
@@ -576,6 +622,108 @@ alwaysApply: true
 		});
 	});
 
+	describe("copySkillFoldersFromRules", () => {
+		it("copies skill folders from rules to skills and generates .mdc from SKILL.md", async () => {
+			const { copySkillFoldersFromRules, syncMdcToSkillMd } = await import(
+				"../src/core/SkillsProcessor"
+			);
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+			const skillsDir = path.join(skillerDir, "skills");
+
+			// Create skill folder with SKILL.md in rules
+			const ruleSkillFolder = path.join(rulesDir, "my-skill");
+			await fs.mkdir(ruleSkillFolder, { recursive: true });
+			await fs.mkdir(skillsDir, { recursive: true });
+
+			await fs.writeFile(
+				path.join(ruleSkillFolder, SKILL_MD_FILENAME),
+				`---
+name: my-skill
+description: A skill from rules
+---
+
+# My Skill Content
+
+This is the full skill content.`,
+			);
+
+			// Copy skill folders from rules
+			await copySkillFoldersFromRules(skillerDir, false, false);
+
+			// Verify skill folder was copied
+			const copiedSkillMd = await fs.readFile(
+				path.join(skillsDir, "my-skill", SKILL_MD_FILENAME),
+				"utf8",
+			);
+			expect(copiedSkillMd).toContain("# My Skill Content");
+
+			// Run sync - should generate .mdc from SKILL.md
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			expect(result.synced).toContain("my-skill");
+
+			// Verify .mdc was generated
+			const mdcContent = await fs.readFile(
+				path.join(skillsDir, "my-skill", "my-skill.mdc"),
+				"utf8",
+			);
+			expect(mdcContent).toContain("description: A skill from rules");
+			expect(mdcContent).toContain("# My Skill Content");
+
+			// Verify SKILL.md was updated to @reference
+			const updatedSkillMd = await fs.readFile(
+				path.join(skillsDir, "my-skill", SKILL_MD_FILENAME),
+				"utf8",
+			);
+			expect(updatedSkillMd).toContain(
+				"@.claude/skills/my-skill/my-skill.mdc",
+			);
+		});
+
+		it("copies skill folders with helper files", async () => {
+			const { copySkillFoldersFromRules } = await import(
+				"../src/core/SkillsProcessor"
+			);
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+			const skillsDir = path.join(skillerDir, "skills");
+
+			// Create skill folder with SKILL.md and helper files in rules
+			const ruleSkillFolder = path.join(rulesDir, "complex-skill");
+			await fs.mkdir(ruleSkillFolder, { recursive: true });
+			await fs.mkdir(skillsDir, { recursive: true });
+
+			await fs.writeFile(
+				path.join(ruleSkillFolder, SKILL_MD_FILENAME),
+				"# Complex Skill",
+			);
+			await fs.writeFile(
+				path.join(ruleSkillFolder, "helper.sh"),
+				"#!/bin/bash\necho 'helper'",
+			);
+
+			// Copy skill folders from rules
+			await copySkillFoldersFromRules(skillerDir, false, false);
+
+			// Verify skill folder and helper file were copied
+			expect(
+				await fs
+					.access(path.join(skillsDir, "complex-skill", SKILL_MD_FILENAME))
+					.then(() => true)
+					.catch(() => false),
+			).toBe(true);
+			expect(
+				await fs
+					.access(path.join(skillsDir, "complex-skill", "helper.sh"))
+					.then(() => true)
+					.catch(() => false),
+			).toBe(true);
+		});
+	});
+
 	describe("propagateSkills", () => {
 		it("discovers skills when enabled", async () => {
 			const { propagateSkills } = await import("../src/core/SkillsProcessor");
@@ -610,6 +758,141 @@ alwaysApply: true
 			// No skills directory exists
 			await expect(
 				propagateSkills(tmpDir, allAgents, true, false, false),
+			).resolves.toBeUndefined();
+		});
+	});
+
+	describe("deleteRulesDir", () => {
+		it("deletes .claude/rules directory after migration", async () => {
+			const { deleteRulesDir } = await import("../src/core/SkillsProcessor");
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+
+			// Create rules directory with content
+			await fs.mkdir(rulesDir, { recursive: true });
+			await fs.writeFile(path.join(rulesDir, "test.mdc"), "# Test");
+
+			// Verify rules directory exists
+			expect(
+				await fs
+					.access(rulesDir)
+					.then(() => true)
+					.catch(() => false),
+			).toBe(true);
+
+			// Delete rules directory
+			const result = await deleteRulesDir(skillerDir, false, false);
+
+			expect(result).toBe(true);
+			// Verify rules directory is deleted
+			expect(
+				await fs
+					.access(rulesDir)
+					.then(() => true)
+					.catch(() => false),
+			).toBe(false);
+		});
+
+		it("returns false when no rules directory exists", async () => {
+			const { deleteRulesDir } = await import("../src/core/SkillsProcessor");
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			await fs.mkdir(skillerDir, { recursive: true });
+
+			// No rules directory exists
+			const result = await deleteRulesDir(skillerDir, false, false);
+
+			expect(result).toBe(false);
+		});
+
+		it("respects dry-run mode", async () => {
+			const { deleteRulesDir } = await import("../src/core/SkillsProcessor");
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+
+			// Create rules directory
+			await fs.mkdir(rulesDir, { recursive: true });
+			await fs.writeFile(path.join(rulesDir, "test.mdc"), "# Test");
+
+			// Delete in dry-run mode
+			const result = await deleteRulesDir(skillerDir, false, true);
+
+			expect(result).toBe(true);
+			// Verify rules directory still exists (dry-run)
+			expect(
+				await fs
+					.access(rulesDir)
+					.then(() => true)
+					.catch(() => false),
+			).toBe(true);
+		});
+	});
+
+	describe("migrateRulesToSkills", () => {
+		it("migrates all content from rules to skills and deletes rules", async () => {
+			const { migrateRulesToSkills } = await import(
+				"../src/core/SkillsProcessor"
+			);
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+			const skillsDir = path.join(skillerDir, "skills");
+
+			// Create rules with both .mdc file and skill folder
+			await fs.mkdir(rulesDir, { recursive: true });
+			await fs.writeFile(
+				path.join(rulesDir, "standalone.mdc"),
+				"---\ndescription: Test\n---\n\n# Standalone",
+			);
+
+			const ruleSkillFolder = path.join(rulesDir, "test-skill");
+			await fs.mkdir(ruleSkillFolder, { recursive: true });
+			await fs.writeFile(
+				path.join(ruleSkillFolder, SKILL_MD_FILENAME),
+				"# Test Skill",
+			);
+
+			// Run migration
+			await migrateRulesToSkills(skillerDir, false, false);
+
+			// Verify .mdc file was copied
+			expect(
+				await fs
+					.access(path.join(skillsDir, "standalone", "standalone.mdc"))
+					.then(() => true)
+					.catch(() => false),
+			).toBe(true);
+
+			// Verify skill folder was copied
+			expect(
+				await fs
+					.access(path.join(skillsDir, "test-skill", SKILL_MD_FILENAME))
+					.then(() => true)
+					.catch(() => false),
+			).toBe(true);
+
+			// Verify rules directory was deleted
+			expect(
+				await fs
+					.access(rulesDir)
+					.then(() => true)
+					.catch(() => false),
+			).toBe(false);
+		});
+
+		it("does nothing when rules directory does not exist", async () => {
+			const { migrateRulesToSkills } = await import(
+				"../src/core/SkillsProcessor"
+			);
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			await fs.mkdir(skillerDir, { recursive: true });
+
+			// Should not throw when rules directory doesn't exist
+			await expect(
+				migrateRulesToSkills(skillerDir, false, false),
 			).resolves.toBeUndefined();
 		});
 	});
