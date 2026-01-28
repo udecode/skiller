@@ -14,15 +14,37 @@ import { parseFrontmatter } from './FrontmatterParser';
 import type { IAgent } from '../agents/IAgent';
 
 /**
+ * Check if SKILL.md body is just a reference (single non-empty line starting with @).
+ * This replaces the previous synced: true frontmatter detection.
+ */
+export function isReferenceBody(body: string): {
+  isReference: boolean;
+  referencePath?: string;
+} {
+  const lines = body.split('\n').filter((line) => line.trim().length > 0);
+  if (lines.length === 1 && lines[0].trim().startsWith('@')) {
+    return {
+      isReference: true,
+      referencePath: lines[0].trim().slice(1), // Remove @ prefix
+    };
+  }
+  return { isReference: false };
+}
+
+/**
  * Bidirectional sync between .mdc files and SKILL.md in the skills directory.
  *
- * Sync logic:
- * 1. If .mdc exists but no SKILL.md → generate SKILL.md with synced: true
- * 2. If SKILL.md has synced: true + .mdc exists → regenerate SKILL.md from .mdc
- * 3. If SKILL.md exists WITHOUT synced: true → generate .mdc from SKILL.md, add synced: true
+ * Sync logic (using @reference pattern instead of synced: true):
+ * 1. If sibling .mdc exists (name/name.mdc) but no SKILL.md → generate SKILL.md with @./name.mdc
+ * 2. If SKILL.md body is @reference → referenced file is source of truth
+ * 3. If SKILL.md has full content → generate sibling .mdc, update SKILL.md to @./name.mdc
  *
  * File structure:
- * - .claude/skills/foo.mdc → .claude/skills/foo/SKILL.md
+ * - .claude/skills/foo/foo.mdc → .claude/skills/foo/SKILL.md (with @./foo.mdc body)
+ *
+ * Backward compatibility:
+ * - .claude/skills/foo.mdc at root → migrates to sibling pattern
+ * - @.claude/rules/name.mdc → recognized as reference (pre-0.7 pattern)
  */
 export async function syncMdcToSkillMd(
   skillsDir: string,
@@ -41,16 +63,66 @@ export async function syncMdcToSkillMd(
 
   const entries = await fs.readdir(skillsDir, { withFileTypes: true });
 
-  // Find .mdc files at the skills root level
-  const mdcFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.mdc'));
-  const skillFolders = entries.filter((e) => e.isDirectory());
+  // Find .mdc files at skills root (for backward compatibility/migration)
+  const rootMdcFiles = entries.filter(
+    (e) => e.isFile() && e.name.endsWith('.mdc'),
+  );
 
-  // Case 1 & 2: Process .mdc files
-  for (const mdcFile of mdcFiles) {
+  // First, migrate any root .mdc files to sibling pattern
+  for (const mdcFile of rootMdcFiles) {
     const skillName = path.basename(mdcFile.name, '.mdc');
-    const mdcPath = path.join(skillsDir, mdcFile.name);
+    const rootMdcPath = path.join(skillsDir, mdcFile.name);
+    const skillFolderPath = path.join(skillsDir, skillName);
+    const siblingMdcPath = path.join(skillFolderPath, mdcFile.name);
+
+    try {
+      // Create skill folder if needed
+      if (!dryRun) {
+        await fs.mkdir(skillFolderPath, { recursive: true });
+      }
+
+      // Move .mdc to sibling location
+      if (dryRun) {
+        logVerboseInfo(
+          `DRY RUN: Would migrate ${mdcFile.name} to ${skillName}/${mdcFile.name}`,
+          verbose,
+          dryRun,
+        );
+      } else {
+        const mdcContent = await fs.readFile(rootMdcPath, 'utf8');
+        await fs.writeFile(siblingMdcPath, mdcContent, 'utf8');
+        await fs.unlink(rootMdcPath);
+        logVerboseInfo(
+          `Migrated ${mdcFile.name} to ${skillName}/${mdcFile.name}`,
+          verbose,
+          dryRun,
+        );
+      }
+    } catch (err) {
+      warnings.push(
+        `Failed to migrate ${skillName}.mdc: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Re-read entries after migration
+  const updatedEntries = await fs.readdir(skillsDir, { withFileTypes: true });
+  const updatedSkillFolders = updatedEntries.filter((e) => e.isDirectory());
+
+  // Process skill folders
+  for (const folder of updatedSkillFolders) {
+    const skillName = folder.name;
     const skillFolderPath = path.join(skillsDir, skillName);
     const skillMdPath = path.join(skillFolderPath, SKILL_MD_FILENAME);
+    const siblingMdcPath = path.join(skillFolderPath, `${skillName}.mdc`);
+
+    // Check if sibling .mdc exists
+    let siblingMdcContent: string | null = null;
+    try {
+      siblingMdcContent = await fs.readFile(siblingMdcPath, 'utf8');
+    } catch {
+      // No sibling .mdc
+    }
 
     // Check if SKILL.md exists
     let skillMdContent: string | null = null;
@@ -61,124 +133,134 @@ export async function syncMdcToSkillMd(
     }
 
     try {
-      const mdcContent = await fs.readFile(mdcPath, 'utf8');
-      const { frontmatter: mdcFrontmatter, body: mdcBody } =
-        parseFrontmatter(mdcContent);
+      if (siblingMdcContent !== null && skillMdContent === null) {
+        // Case 1: Sibling .mdc exists but no SKILL.md → generate SKILL.md with @reference
+        const { frontmatter: mdcFrontmatter } =
+          parseFrontmatter(siblingMdcContent);
 
-      if (skillMdContent === null) {
-        // Case 1: No SKILL.md exists → generate from .mdc with synced: true
         const skillFrontmatter = {
           name: skillName,
           description: mdcFrontmatter?.description || `Skill: ${skillName}`,
-          synced: true,
         };
 
         const newSkillMd = `---
 ${yaml.dump(skillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
-${mdcBody}
+@./${skillName}.mdc
 `;
 
         if (dryRun) {
           logVerboseInfo(
-            `DRY RUN: Would generate ${skillName}/SKILL.md from ${mdcFile.name}`,
+            `DRY RUN: Would generate ${skillName}/SKILL.md with @reference`,
             verbose,
             dryRun,
           );
         } else {
-          await fs.mkdir(skillFolderPath, { recursive: true });
           await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
           logVerboseInfo(
-            `Generated ${skillName}/SKILL.md from ${mdcFile.name}`,
+            `Generated ${skillName}/SKILL.md with @./${skillName}.mdc reference`,
             verbose,
             dryRun,
           );
         }
         synced.push(skillName);
-      } else {
-        // SKILL.md exists - check if it has synced: true
+      } else if (skillMdContent !== null) {
+        // SKILL.md exists - check if it's a reference
         const { frontmatter: skillFrontmatter, body: skillBody } =
           parseFrontmatter(skillMdContent);
+        const refCheck = isReferenceBody(skillBody);
 
-        if (skillFrontmatter?.synced === true) {
-          // Case 2: synced: true → regenerate SKILL.md from .mdc
-          const newFrontmatter = {
-            name: skillFrontmatter.name || skillName,
-            description:
-              mdcFrontmatter?.description ||
-              skillFrontmatter.description ||
-              `Skill: ${skillName}`,
-            synced: true,
-          };
+        if (refCheck.isReference) {
+          // Case 2: SKILL.md is @reference → source file is truth
+          // Nothing to do - the reference points to the source
+          // Just validate/update if sibling .mdc exists and frontmatter changed
+          if (
+            siblingMdcContent !== null &&
+            refCheck.referencePath === `./${skillName}.mdc`
+          ) {
+            const { frontmatter: mdcFrontmatter } =
+              parseFrontmatter(siblingMdcContent);
 
-          const newSkillMd = `---
+            // Update SKILL.md frontmatter if description changed in .mdc
+            if (
+              mdcFrontmatter?.description &&
+              mdcFrontmatter.description !== skillFrontmatter?.description
+            ) {
+              const newFrontmatter = {
+                name: skillFrontmatter?.name || skillName,
+                description: mdcFrontmatter.description,
+              };
+
+              const newSkillMd = `---
 ${yaml.dump(newFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
-${mdcBody}
+@./${skillName}.mdc
 `;
 
-          if (dryRun) {
-            logVerboseInfo(
-              `DRY RUN: Would update ${skillName}/SKILL.md from ${mdcFile.name}`,
-              verbose,
-              dryRun,
-            );
-          } else {
-            await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
-            logVerboseInfo(
-              `Updated ${skillName}/SKILL.md from ${mdcFile.name}`,
-              verbose,
-              dryRun,
-            );
+              if (dryRun) {
+                logVerboseInfo(
+                  `DRY RUN: Would update ${skillName}/SKILL.md frontmatter from .mdc`,
+                  verbose,
+                  dryRun,
+                );
+              } else {
+                await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
+                logVerboseInfo(
+                  `Updated ${skillName}/SKILL.md frontmatter from .mdc`,
+                  verbose,
+                  dryRun,
+                );
+              }
+              synced.push(skillName);
+            }
           }
-          synced.push(skillName);
+          // For other reference patterns (like @.claude/rules/...), leave as-is
         } else {
-          // SKILL.md exists without synced: true → SKILL.md is source of truth
-          // Update .mdc from SKILL.md and add synced: true
-          const mdcFrontmatterObj: Record<string, unknown> = {};
+          // Case 3: SKILL.md has full content → generate sibling .mdc, update to @reference
+          // Generate .mdc from SKILL.md body
+          const mdcFrontmatter: Record<string, unknown> = {};
           if (skillFrontmatter?.description) {
-            mdcFrontmatterObj.description = skillFrontmatter.description;
+            mdcFrontmatter.description = skillFrontmatter.description;
           }
 
-          let newMdcContent: string;
-          if (Object.keys(mdcFrontmatterObj).length > 0) {
-            newMdcContent = `---
-${yaml.dump(mdcFrontmatterObj, { lineWidth: -1, noRefs: true }).trim()}
+          let mdcContent: string;
+          if (Object.keys(mdcFrontmatter).length > 0) {
+            mdcContent = `---
+${yaml.dump(mdcFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
 ${skillBody}
 `;
           } else {
-            newMdcContent = skillBody;
+            mdcContent = skillBody;
           }
 
-          // Update SKILL.md with synced: true
+          // Update SKILL.md to @reference
           const newSkillFrontmatter = {
             name: skillFrontmatter?.name || skillName,
             description: skillFrontmatter?.description || `Skill: ${skillName}`,
-            synced: true,
           };
 
           const newSkillMd = `---
 ${yaml.dump(newSkillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
-${skillBody}
+@./${skillName}.mdc
 `;
 
           if (dryRun) {
             logVerboseInfo(
-              `DRY RUN: Would update ${skillName}.mdc from ${skillName}/SKILL.md`,
+              `DRY RUN: Would generate ${skillName}/${skillName}.mdc and update SKILL.md`,
               verbose,
               dryRun,
             );
           } else {
-            await fs.writeFile(mdcPath, newMdcContent, 'utf8');
+            await fs.writeFile(siblingMdcPath, mdcContent, 'utf8');
             await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
             logVerboseInfo(
-              `Updated ${skillName}.mdc from ${skillName}/SKILL.md`,
+              `Generated ${skillName}/${skillName}.mdc and updated SKILL.md to @reference`,
               verbose,
               dryRun,
             );
@@ -186,94 +268,7 @@ ${skillBody}
           synced.push(skillName);
         }
       }
-    } catch (err) {
-      warnings.push(`Failed to sync ${skillName}: ${(err as Error).message}`);
-    }
-  }
-
-  // Case 3: Process skill folders without .mdc (SKILL.md → .mdc)
-  for (const folder of skillFolders) {
-    const skillName = folder.name;
-    const mdcPath = path.join(skillsDir, `${skillName}.mdc`);
-    const skillMdPath = path.join(skillsDir, skillName, SKILL_MD_FILENAME);
-
-    // Check if .mdc already exists
-    let hasMdc = false;
-    try {
-      await fs.access(mdcPath);
-      hasMdc = true;
-    } catch {
-      // No .mdc
-    }
-
-    if (hasMdc) {
-      // Already processed in Cases 1 & 2
-      continue;
-    }
-
-    // Check if SKILL.md exists
-    let skillMdContent: string | null = null;
-    try {
-      skillMdContent = await fs.readFile(skillMdPath, 'utf8');
-    } catch {
-      // No SKILL.md - not a valid skill
-      continue;
-    }
-
-    try {
-      const { frontmatter, body } = parseFrontmatter(skillMdContent);
-
-      if (frontmatter?.synced !== true) {
-        // Case 3: SKILL.md without synced: true → generate .mdc, add synced: true to SKILL.md
-        // Generate .mdc from SKILL.md body
-        const mdcFrontmatter: Record<string, unknown> = {};
-        if (frontmatter?.description) {
-          mdcFrontmatter.description = frontmatter.description;
-        }
-
-        let mdcContent: string;
-        if (Object.keys(mdcFrontmatter).length > 0) {
-          mdcContent = `---
-${yaml.dump(mdcFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
----
-
-${body}
-`;
-        } else {
-          mdcContent = body;
-        }
-
-        // Update SKILL.md with synced: true
-        const newSkillFrontmatter = {
-          name: frontmatter?.name || skillName,
-          description: frontmatter?.description || `Skill: ${skillName}`,
-          synced: true,
-        };
-
-        const newSkillMd = `---
-${yaml.dump(newSkillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
----
-
-${body}
-`;
-
-        if (dryRun) {
-          logVerboseInfo(
-            `DRY RUN: Would generate ${skillName}.mdc from ${skillName}/SKILL.md`,
-            verbose,
-            dryRun,
-          );
-        } else {
-          await fs.writeFile(mdcPath, mdcContent, 'utf8');
-          await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
-          logVerboseInfo(
-            `Generated ${skillName}.mdc from ${skillName}/SKILL.md`,
-            verbose,
-            dryRun,
-          );
-        }
-        synced.push(skillName);
-      }
+      // If neither exists, skip - not a valid skill folder
     } catch (err) {
       warnings.push(`Failed to sync ${skillName}: ${(err as Error).message}`);
     }

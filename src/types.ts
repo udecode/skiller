@@ -43,8 +43,6 @@ export interface MdcFrontmatter {
   globs?: string[];
   /** Whether this rule should always be applied. */
   alwaysApply?: boolean;
-  /** Whether this skill is synced from .mdc (true = .mdc is source of truth). */
-  synced?: boolean;
   /** Name of the skill (used in SKILL.md). */
   name?: string;
 }

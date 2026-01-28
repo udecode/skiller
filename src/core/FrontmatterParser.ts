@@ -128,11 +128,6 @@ function extractFrontmatter(
       frontmatter.alwaysApply = parsed.alwaysApply;
     }
 
-    // Extract synced (for skill sync detection)
-    if (typeof parsed.synced === 'boolean') {
-      frontmatter.synced = parsed.synced;
-    }
-
     // Extract name (for SKILL.md)
     if (typeof parsed.name === 'string') {
       frontmatter.name = parsed.name;

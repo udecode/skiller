@@ -1,8 +1,54 @@
 import * as path from "path";
 import * as fs from "fs/promises";
 import * as os from "os";
-import { discoverSkills, syncMdcToSkillMd } from "../src/core/SkillsProcessor";
+import {
+	discoverSkills,
+	syncMdcToSkillMd,
+	isReferenceBody,
+} from "../src/core/SkillsProcessor";
 import { SKILL_MD_FILENAME } from "../src/constants";
+
+describe("isReferenceBody", () => {
+	it("detects single line starting with @ as reference", () => {
+		const result = isReferenceBody("@./my-skill.mdc");
+		expect(result.isReference).toBe(true);
+		expect(result.referencePath).toBe("./my-skill.mdc");
+	});
+
+	it("detects reference with surrounding whitespace", () => {
+		const result = isReferenceBody("  @./my-skill.mdc  \n\n");
+		expect(result.isReference).toBe(true);
+		expect(result.referencePath).toBe("./my-skill.mdc");
+	});
+
+	it("detects pre-0.7 pattern reference", () => {
+		const result = isReferenceBody("@.claude/rules/my-skill.mdc");
+		expect(result.isReference).toBe(true);
+		expect(result.referencePath).toBe(".claude/rules/my-skill.mdc");
+	});
+
+	it("returns false for multiple lines", () => {
+		const result = isReferenceBody("@./my-skill.mdc\n# Some content");
+		expect(result.isReference).toBe(false);
+		expect(result.referencePath).toBeUndefined();
+	});
+
+	it("returns false for content not starting with @", () => {
+		const result = isReferenceBody("# My Skill Content");
+		expect(result.isReference).toBe(false);
+		expect(result.referencePath).toBeUndefined();
+	});
+
+	it("returns false for empty body", () => {
+		const result = isReferenceBody("");
+		expect(result.isReference).toBe(false);
+	});
+
+	it("returns false for body with only whitespace", () => {
+		const result = isReferenceBody("   \n\n   ");
+		expect(result.isReference).toBe(false);
+	});
+});
 
 describe("Skills Discovery and Validation", () => {
 	let tmpDir: string;
@@ -160,11 +206,12 @@ describe("Skills Discovery and Validation", () => {
 	});
 
 	describe("syncMdcToSkillMd", () => {
-		it("Case 1: creates SKILL.md with synced:true from standalone .mdc file", async () => {
+		it("Case 1: creates SKILL.md with @reference from sibling .mdc file", async () => {
 			const skillsDir = path.join(tmpDir, ".claude", "skills");
-			await fs.mkdir(skillsDir, { recursive: true });
+			const skillFolder = path.join(skillsDir, "my-skill");
+			await fs.mkdir(skillFolder, { recursive: true });
 
-			// Create standalone .mdc file at skills root
+			// Create sibling .mdc file inside skill folder
 			const mdcContent = `---
 description: My test skill
 ---
@@ -173,69 +220,68 @@ description: My test skill
 
 This is the skill body.
 `;
-			await fs.writeFile(path.join(skillsDir, "my-skill.mdc"), mdcContent);
+			await fs.writeFile(path.join(skillFolder, "my-skill.mdc"), mdcContent);
 
 			const result = await syncMdcToSkillMd(skillsDir, false, false);
 
 			expect(result.synced).toContain("my-skill");
 			expect(result.warnings).toHaveLength(0);
 
-			// Verify SKILL.md was created with synced: true
-			const skillMdPath = path.join(skillsDir, "my-skill", SKILL_MD_FILENAME);
+			// Verify SKILL.md was created with @reference body
+			const skillMdPath = path.join(skillFolder, SKILL_MD_FILENAME);
 			const content = await fs.readFile(skillMdPath, "utf8");
 			expect(content).toContain("name: my-skill");
 			expect(content).toContain("description: My test skill");
-			expect(content).toContain("synced: true");
-			expect(content).toContain("# Test Skill Content");
+			expect(content).toContain("@./my-skill.mdc");
+			expect(content).not.toContain("synced:");
 		});
 
-		it("Case 2: regenerates SKILL.md from .mdc when synced:true", async () => {
+		it("Case 2: recognizes @reference body as synced (sibling .mdc is source)", async () => {
 			const skillsDir = path.join(tmpDir, ".claude", "skills");
 			const skillFolder = path.join(skillsDir, "synced-skill");
 			await fs.mkdir(skillFolder, { recursive: true });
 
-			// Create existing SKILL.md with synced: true
+			// Create existing SKILL.md with @reference body
 			await fs.writeFile(
 				path.join(skillFolder, SKILL_MD_FILENAME),
 				`---
 name: synced-skill
 description: Old description
-synced: true
 ---
 
-# Old Content`,
+@./synced-skill.mdc`,
 			);
 
-			// Create .mdc with new content
+			// Create sibling .mdc with new description
 			await fs.writeFile(
-				path.join(skillsDir, "synced-skill.mdc"),
+				path.join(skillFolder, "synced-skill.mdc"),
 				`---
 description: New description from mdc
 ---
 
-# New Content from MDC`,
+# Content from MDC`,
 			);
 
 			const result = await syncMdcToSkillMd(skillsDir, false, false);
 
 			expect(result.synced).toContain("synced-skill");
 
-			// Verify SKILL.md was updated with .mdc content
+			// Verify SKILL.md frontmatter was updated from .mdc
 			const content = await fs.readFile(
 				path.join(skillFolder, SKILL_MD_FILENAME),
 				"utf8",
 			);
 			expect(content).toContain("description: New description from mdc");
-			expect(content).toContain("# New Content from MDC");
-			expect(content).toContain("synced: true");
+			expect(content).toContain("@./synced-skill.mdc");
+			expect(content).not.toContain("synced:");
 		});
 
-		it("Case 3: generates .mdc from SKILL.md without synced flag", async () => {
+		it("Case 3: generates sibling .mdc from SKILL.md with full content", async () => {
 			const skillsDir = path.join(tmpDir, ".claude", "skills");
 			const skillFolder = path.join(skillsDir, "unsynced-skill");
 			await fs.mkdir(skillFolder, { recursive: true });
 
-			// Create SKILL.md without synced: true
+			// Create SKILL.md with full content (not @reference)
 			await fs.writeFile(
 				path.join(skillFolder, SKILL_MD_FILENAME),
 				`---
@@ -250,63 +296,70 @@ description: Original skill
 
 			expect(result.synced).toContain("unsynced-skill");
 
-			// Verify .mdc was created
+			// Verify sibling .mdc was created
 			const mdcContent = await fs.readFile(
-				path.join(skillsDir, "unsynced-skill.mdc"),
+				path.join(skillFolder, "unsynced-skill.mdc"),
 				"utf8",
 			);
 			expect(mdcContent).toContain("description: Original skill");
 			expect(mdcContent).toContain("# Original Content");
 
-			// Verify SKILL.md was updated with synced: true
+			// Verify SKILL.md was updated to @reference
 			const skillContent = await fs.readFile(
 				path.join(skillFolder, SKILL_MD_FILENAME),
 				"utf8",
 			);
-			expect(skillContent).toContain("synced: true");
+			expect(skillContent).toContain("@./unsynced-skill.mdc");
+			expect(skillContent).not.toContain("synced:");
 		});
 
-		it("skips .mdc when SKILL.md exists without synced:true", async () => {
+		it("migrates root .mdc files to sibling pattern", async () => {
 			const skillsDir = path.join(tmpDir, ".claude", "skills");
-			const skillFolder = path.join(skillsDir, "manual-skill");
-			await fs.mkdir(skillFolder, { recursive: true });
+			await fs.mkdir(skillsDir, { recursive: true });
 
-			// Create SKILL.md without synced: true (manually created)
+			// Create .mdc at skills root (old pattern)
 			await fs.writeFile(
-				path.join(skillFolder, SKILL_MD_FILENAME),
+				path.join(skillsDir, "migrate-skill.mdc"),
 				`---
-name: manual-skill
-description: Manual skill
+description: Skill to migrate
 ---
 
-# Manual Content`,
-			);
-
-			// Create .mdc that should be ignored (SKILL.md is source of truth)
-			await fs.writeFile(
-				path.join(skillsDir, "manual-skill.mdc"),
-				"# Should be ignored",
+# Migrate Content`,
 			);
 
 			const result = await syncMdcToSkillMd(skillsDir, false, false);
 
-			// The skill should be synced (Case 3: generate .mdc, add synced:true)
-			expect(result.synced).toContain("manual-skill");
+			expect(result.synced).toContain("migrate-skill");
 
-			// The .mdc should now contain the SKILL.md content (not the ignored content)
-			const mdcContent = await fs.readFile(
-				path.join(skillsDir, "manual-skill.mdc"),
+			// Verify .mdc was moved to sibling location
+			const siblingMdcExists = await fs
+				.access(path.join(skillsDir, "migrate-skill", "migrate-skill.mdc"))
+				.then(() => true)
+				.catch(() => false);
+			expect(siblingMdcExists).toBe(true);
+
+			// Verify root .mdc was removed
+			const rootMdcExists = await fs
+				.access(path.join(skillsDir, "migrate-skill.mdc"))
+				.then(() => true)
+				.catch(() => false);
+			expect(rootMdcExists).toBe(false);
+
+			// Verify SKILL.md was created with @reference
+			const skillMdContent = await fs.readFile(
+				path.join(skillsDir, "migrate-skill", SKILL_MD_FILENAME),
 				"utf8",
 			);
-			expect(mdcContent).toContain("# Manual Content");
+			expect(skillMdContent).toContain("@./migrate-skill.mdc");
 		});
 
 		it("handles dry run mode", async () => {
 			const skillsDir = path.join(tmpDir, ".claude", "skills");
-			await fs.mkdir(skillsDir, { recursive: true });
+			const skillFolder = path.join(skillsDir, "dry-run-skill");
+			await fs.mkdir(skillFolder, { recursive: true });
 
 			await fs.writeFile(
-				path.join(skillsDir, "dry-run-skill.mdc"),
+				path.join(skillFolder, "dry-run-skill.mdc"),
 				"# Dry run content",
 			);
 
@@ -314,28 +367,29 @@ description: Manual skill
 
 			expect(result.synced).toContain("dry-run-skill");
 
-			// Verify folder was NOT created in dry run
-			const folderExists = await fs
-				.access(path.join(skillsDir, "dry-run-skill"))
+			// Verify SKILL.md was NOT created in dry run
+			const skillMdExists = await fs
+				.access(path.join(skillFolder, SKILL_MD_FILENAME))
 				.then(() => true)
 				.catch(() => false);
-			expect(folderExists).toBe(false);
+			expect(skillMdExists).toBe(false);
 		});
 
 		it("uses default description when frontmatter has none", async () => {
 			const skillsDir = path.join(tmpDir, ".claude", "skills");
-			await fs.mkdir(skillsDir, { recursive: true });
+			const skillFolder = path.join(skillsDir, "no-desc");
+			await fs.mkdir(skillFolder, { recursive: true });
 
-			// Create .mdc without description in frontmatter
+			// Create sibling .mdc without description in frontmatter
 			await fs.writeFile(
-				path.join(skillsDir, "no-desc.mdc"),
+				path.join(skillFolder, "no-desc.mdc"),
 				"# Just content, no frontmatter",
 			);
 
 			await syncMdcToSkillMd(skillsDir, false, false);
 
 			const content = await fs.readFile(
-				path.join(skillsDir, "no-desc", SKILL_MD_FILENAME),
+				path.join(skillFolder, SKILL_MD_FILENAME),
 				"utf8",
 			);
 			expect(content).toContain("description: 'Skill: no-desc'");
@@ -348,6 +402,48 @@ description: Manual skill
 
 			expect(result.synced).toHaveLength(0);
 			expect(result.warnings).toHaveLength(0);
+		});
+
+		it("recognizes pre-0.7 pattern (@.claude/rules/name.mdc) as reference", async () => {
+			const skillsDir = path.join(tmpDir, ".claude", "skills");
+			const rulesDir = path.join(tmpDir, ".claude", "rules");
+			const skillFolder = path.join(skillsDir, "my-skill");
+
+			await fs.mkdir(skillFolder, { recursive: true });
+			await fs.mkdir(rulesDir, { recursive: true });
+
+			// Create the rule source file (pre-0.7 location)
+			await fs.writeFile(
+				path.join(rulesDir, "my-skill.mdc"),
+				`---
+description: My skill description
+---
+
+# My Skill Content`,
+			);
+
+			// Create SKILL.md with @reference (pre-0.7 pattern)
+			await fs.writeFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				`---
+name: my-skill
+description: My skill description
+---
+
+@.claude/rules/my-skill.mdc`,
+			);
+
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			// Should recognize as reference file - no modification needed
+			expect(result.warnings).toHaveLength(0);
+
+			// SKILL.md should remain unchanged (still points to rules)
+			const content = await fs.readFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				"utf8",
+			);
+			expect(content).toContain("@.claude/rules/my-skill.mdc");
 		});
 	});
 
