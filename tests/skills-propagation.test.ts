@@ -404,7 +404,7 @@ description: Skill to migrate
 			expect(result.warnings).toHaveLength(0);
 		});
 
-		it("recognizes pre-0.7 pattern (@.claude/rules/name.mdc) as reference", async () => {
+		it("migrates pre-0.7 pattern (@.claude/rules/name.mdc) to sibling pattern", async () => {
 			const skillsDir = path.join(tmpDir, ".claude", "skills");
 			const rulesDir = path.join(tmpDir, ".claude", "rules");
 			const skillFolder = path.join(skillsDir, "my-skill");
@@ -435,15 +435,25 @@ description: My skill description
 
 			const result = await syncMdcToSkillMd(skillsDir, false, false);
 
-			// Should recognize as reference file - no modification needed
+			// Should migrate successfully
 			expect(result.warnings).toHaveLength(0);
+			expect(result.synced).toContain("my-skill");
 
-			// SKILL.md should remain unchanged (still points to rules)
-			const content = await fs.readFile(
+			// SKILL.md should now point to sibling .mdc
+			const skillMdContent = await fs.readFile(
 				path.join(skillFolder, SKILL_MD_FILENAME),
 				"utf8",
 			);
-			expect(content).toContain("@.claude/rules/my-skill.mdc");
+			expect(skillMdContent).toContain("@./my-skill.mdc");
+			expect(skillMdContent).not.toContain("@.claude/rules");
+
+			// Sibling .mdc should be created with content from rules
+			const siblingMdcContent = await fs.readFile(
+				path.join(skillFolder, "my-skill.mdc"),
+				"utf8",
+			);
+			expect(siblingMdcContent).toContain("# My Skill Content");
+			expect(siblingMdcContent).toContain("description: My skill description");
 		});
 	});
 

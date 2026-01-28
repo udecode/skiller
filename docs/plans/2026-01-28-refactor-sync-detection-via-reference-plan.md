@@ -174,8 +174,8 @@ description: My skill
 
 ## Migration
 
-- **Old pattern** (`.claude/skills/name.mdc` at root): Still works during transition, can be migrated
-- **Pre-0.7 pattern** (`@.claude/rules/name.mdc`): Works as-is, reference is preserved
+- **Old pattern** (`.claude/skills/name.mdc` at root): Automatically migrated to sibling pattern
+- **Pre-0.7 pattern** (`@.claude/rules/name.mdc`): Automatically migrated to sibling pattern (allows `.claude/rules` to be removed)
 - **New pattern** (`.claude/skills/name/name.mdc`): Preferred going forward
 
 ## References

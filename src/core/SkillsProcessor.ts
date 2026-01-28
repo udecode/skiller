@@ -173,23 +173,111 @@ ${yaml.dump(skillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 
         if (refCheck.isReference) {
           // Case 2: SKILL.md is @reference → source file is truth
-          // Nothing to do - the reference points to the source
-          // Just validate/update if sibling .mdc exists and frontmatter changed
-          if (
-            siblingMdcContent !== null &&
-            refCheck.referencePath === `./${skillName}.mdc`
-          ) {
-            const { frontmatter: mdcFrontmatter } =
-              parseFrontmatter(siblingMdcContent);
+          if (refCheck.referencePath === `./${skillName}.mdc`) {
+            // Sibling reference pattern - validate/update frontmatter if .mdc changed
+            if (siblingMdcContent !== null) {
+              const { frontmatter: mdcFrontmatter } =
+                parseFrontmatter(siblingMdcContent);
 
-            // Update SKILL.md frontmatter if description changed in .mdc
-            if (
-              mdcFrontmatter?.description &&
-              mdcFrontmatter.description !== skillFrontmatter?.description
-            ) {
+              // Update SKILL.md frontmatter if description changed in .mdc
+              if (
+                mdcFrontmatter?.description &&
+                mdcFrontmatter.description !== skillFrontmatter?.description
+              ) {
+                const newFrontmatter = {
+                  name: skillFrontmatter?.name || skillName,
+                  description: mdcFrontmatter.description,
+                };
+
+                const newSkillMd = `---
+${yaml.dump(newFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
+---
+
+@./${skillName}.mdc
+`;
+
+                if (dryRun) {
+                  logVerboseInfo(
+                    `DRY RUN: Would update ${skillName}/SKILL.md frontmatter from .mdc`,
+                    verbose,
+                    dryRun,
+                  );
+                } else {
+                  await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
+                  logVerboseInfo(
+                    `Updated ${skillName}/SKILL.md frontmatter from .mdc`,
+                    verbose,
+                    dryRun,
+                  );
+                }
+                synced.push(skillName);
+              }
+            }
+          } else if (refCheck.referencePath) {
+            // Pre-0.7 pattern or other external reference - migrate to sibling pattern
+            // Determine base path for resolution:
+            // - Paths starting with .claude/ are relative to project root
+            // - Other paths are relative to the skill folder
+            let referencedPath: string;
+            if (refCheck.referencePath.startsWith('.claude/')) {
+              // Project root is parent of .claude directory (skillsDir is .claude/skills)
+              const projectRoot = path.dirname(path.dirname(skillsDir));
+              referencedPath = path.join(projectRoot, refCheck.referencePath);
+            } else {
+              referencedPath = path.resolve(
+                skillFolderPath,
+                refCheck.referencePath,
+              );
+            }
+
+            try {
+              const referencedContent = await fs.readFile(
+                referencedPath,
+                'utf8',
+              );
+
+              // Parse the referenced file for frontmatter
+              const { frontmatter: refFrontmatter, body: refBody } =
+                parseFrontmatter(referencedContent);
+
+              // Create sibling .mdc with the content
+              let mdcContent: string;
+              if (
+                refFrontmatter &&
+                Object.keys(refFrontmatter).length > 0
+              ) {
+                const mdcFrontmatterData: Record<string, unknown> = {};
+                if (refFrontmatter.description) {
+                  mdcFrontmatterData.description = refFrontmatter.description;
+                }
+                if (refFrontmatter.globs) {
+                  mdcFrontmatterData.globs = refFrontmatter.globs;
+                }
+                if (refFrontmatter.alwaysApply !== undefined) {
+                  mdcFrontmatterData.alwaysApply = refFrontmatter.alwaysApply;
+                }
+
+                if (Object.keys(mdcFrontmatterData).length > 0) {
+                  mdcContent = `---
+${yaml.dump(mdcFrontmatterData, { lineWidth: -1, noRefs: true }).trim()}
+---
+
+${refBody}
+`;
+                } else {
+                  mdcContent = refBody;
+                }
+              } else {
+                mdcContent = referencedContent;
+              }
+
+              // Update SKILL.md to point to sibling .mdc
               const newFrontmatter = {
                 name: skillFrontmatter?.name || skillName,
-                description: mdcFrontmatter.description,
+                description:
+                  refFrontmatter?.description ||
+                  skillFrontmatter?.description ||
+                  `Skill: ${skillName}`,
               };
 
               const newSkillMd = `---
@@ -201,22 +289,27 @@ ${yaml.dump(newFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 
               if (dryRun) {
                 logVerboseInfo(
-                  `DRY RUN: Would update ${skillName}/SKILL.md frontmatter from .mdc`,
+                  `DRY RUN: Would migrate ${skillName} from ${refCheck.referencePath} to sibling pattern`,
                   verbose,
                   dryRun,
                 );
               } else {
+                await fs.writeFile(siblingMdcPath, mdcContent, 'utf8');
                 await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
                 logVerboseInfo(
-                  `Updated ${skillName}/SKILL.md frontmatter from .mdc`,
+                  `Migrated ${skillName} from ${refCheck.referencePath} to sibling pattern`,
                   verbose,
                   dryRun,
                 );
               }
               synced.push(skillName);
+            } catch {
+              // Referenced file doesn't exist or can't be read
+              warnings.push(
+                `Cannot migrate ${skillName}: referenced file ${refCheck.referencePath} not found or unreadable`,
+              );
             }
           }
-          // For other reference patterns (like @.claude/rules/...), leave as-is
         } else {
           // Case 3: SKILL.md has full content → generate sibling .mdc, update to @reference
           // Generate .mdc from SKILL.md body
