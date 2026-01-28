@@ -275,12 +275,28 @@ ${yaml.dump(skillFrontmatter || { name: skillName }, { lineWidth: -1, noRefs: tr
               );
             }
 
-            try {
-              const referencedContent = await fs.readFile(
-                referencedPath,
-                'utf8',
-              );
+            // One-time migration: for old @.claude/rules/ references, look at the
+            // already-migrated skills location. After migration, SKILL.md will have
+            // @.claude/skills/ references, so this code path won't be hit again.
+            let actualPath = referencedPath;
+            if (refCheck.referencePath?.includes('/rules/')) {
+              const refFileName = path.basename(refCheck.referencePath);
+              const refBaseName = path.basename(refFileName, '.mdc');
+              actualPath = path.join(skillsDir, refBaseName, refFileName);
+            }
 
+            let referencedContent: string | null = null;
+            try {
+              referencedContent = await fs.readFile(actualPath, 'utf8');
+            } catch {
+              // File not found
+            }
+
+            if (referencedContent === null) {
+              warnings.push(
+                `Cannot migrate ${skillName}: referenced file not found at ${actualPath}`,
+              );
+            } else {
               // Parse the referenced file for frontmatter
               const { frontmatter: refFrontmatter, body: refBody } =
                 parseFrontmatter(referencedContent);
@@ -333,17 +349,12 @@ ${yaml.dump(newFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
                 await fs.writeFile(siblingMdcPath, mdcContent, 'utf8');
                 await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
                 logVerboseInfo(
-                  `Migrated ${skillName} from ${refCheck.referencePath} to sibling pattern`,
+                  `Migrated ${skillName} from ${actualPath} to sibling pattern`,
                   verbose,
                   dryRun,
                 );
               }
               synced.push(skillName);
-            } catch {
-              // Referenced file doesn't exist or can't be read
-              warnings.push(
-                `Cannot migrate ${skillName}: referenced file ${refCheck.referencePath} not found or unreadable`,
-              );
             }
           }
         } else {

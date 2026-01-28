@@ -990,4 +990,243 @@ This is the full skill content.`,
 			).resolves.toBeUndefined();
 		});
 	});
+
+	describe("Rules migration edge cases", () => {
+		it("correctly migrates .mdc files from rules without path corruption", async () => {
+			const { copyMdcFilesFromRules, syncMdcToSkillMd } = await import(
+				"../src/core/SkillsProcessor"
+			);
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+			const skillsDir = path.join(skillerDir, "skills");
+
+			await fs.mkdir(rulesDir, { recursive: true });
+			await fs.mkdir(skillsDir, { recursive: true });
+
+			// Create .mdc file in rules with frontmatter (realistic scenario)
+			const mdcContent = `---
+description: Use when working with Jotai X stores (createAtomStore)
+globs:
+  - "**/*.ts"
+---
+
+# Jotai X Usage
+
+Use createAtomStore for state management.`;
+
+			await fs.writeFile(path.join(rulesDir, "jotai-x.mdc"), mdcContent);
+
+			// Step 1: Copy .mdc files from rules to skills
+			const copyResult = await copyMdcFilesFromRules(skillerDir, false, false);
+			expect(copyResult).toContain("jotai-x");
+
+			// Verify .mdc was copied to correct path (not corrupted)
+			const copiedMdcPath = path.join(skillsDir, "jotai-x", "jotai-x.mdc");
+			const copiedMdc = await fs.readFile(copiedMdcPath, "utf8");
+
+			// Path should be valid - file exists and contains expected content
+			expect(copiedMdc).toContain("# Jotai X Usage");
+			expect(copiedMdc).not.toContain("globs"); // Should be stripped
+
+			// Step 2: Sync to generate SKILL.md
+			const syncResult = await syncMdcToSkillMd(skillsDir, false, false);
+			expect(syncResult.synced).toContain("jotai-x");
+
+			// Verify SKILL.md was created with correct @reference path
+			const skillMdPath = path.join(skillsDir, "jotai-x", SKILL_MD_FILENAME);
+			const skillMdContent = await fs.readFile(skillMdPath, "utf8");
+
+			// SKILL.md should have proper structure
+			expect(skillMdContent).toContain("name: jotai-x");
+			expect(skillMdContent).toContain("description:");
+			expect(skillMdContent).toContain(
+				"@.claude/skills/jotai-x/jotai-x.mdc",
+			);
+
+			// Verify the paths are valid filesystem paths, not file content
+			const skillFolder = path.join(skillsDir, "jotai-x");
+			const entries = await fs.readdir(skillFolder);
+
+			// Should only contain SKILL.md and jotai-x.mdc - no corrupted filenames
+			expect(entries.sort()).toEqual(["SKILL.md", "jotai-x.mdc"]);
+
+			// Verify no file has been created with SKILL.md content as filename
+			for (const entry of entries) {
+				expect(entry).not.toContain("---");
+				expect(entry).not.toContain("name:");
+				expect(entry).not.toContain("description:");
+			}
+		});
+
+		it("handles existing SKILL.md with pre-0.7 rules reference during migration", async () => {
+			const { copyMdcFilesFromRules, syncMdcToSkillMd } = await import(
+				"../src/core/SkillsProcessor"
+			);
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+			const skillsDir = path.join(skillerDir, "skills");
+
+			await fs.mkdir(rulesDir, { recursive: true });
+
+			// Create .mdc file in rules
+			await fs.writeFile(
+				path.join(rulesDir, "my-rule.mdc"),
+				`---
+description: My rule description
+---
+
+# My Rule Content`,
+			);
+
+			// Create skill folder with SKILL.md that references the rules file
+			const skillFolder = path.join(skillsDir, "my-rule");
+			await fs.mkdir(skillFolder, { recursive: true });
+			await fs.writeFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				`---
+name: my-rule
+description: My rule description
+---
+
+@.claude/rules/my-rule.mdc`,
+			);
+
+			// Step 1: Copy .mdc files from rules
+			await copyMdcFilesFromRules(skillerDir, false, false);
+
+			// Step 2: Sync - should migrate from rules reference to sibling pattern
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			expect(result.warnings).toHaveLength(0);
+			expect(result.synced).toContain("my-rule");
+
+			// Verify SKILL.md now points to sibling .mdc
+			const skillMdContent = await fs.readFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				"utf8",
+			);
+			expect(skillMdContent).toContain(
+				"@.claude/skills/my-rule/my-rule.mdc",
+			);
+			expect(skillMdContent).not.toContain("@.claude/rules");
+
+			// Verify only valid files exist (no corrupted paths)
+			const entries = await fs.readdir(skillFolder);
+			expect(entries.sort()).toEqual(["SKILL.md", "my-rule.mdc"]);
+		});
+
+		it("migrates SKILL.md when rules file was already migrated to different skill folder", async () => {
+			const { copyMdcFilesFromRules, deleteRulesDir, syncMdcToSkillMd } =
+				await import("../src/core/SkillsProcessor");
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+			const skillsDir = path.join(skillerDir, "skills");
+
+			await fs.mkdir(rulesDir, { recursive: true });
+
+			// Create .mdc file in rules (jotai-x.mdc)
+			await fs.writeFile(
+				path.join(rulesDir, "jotai-x.mdc"),
+				`---
+description: Use when working with Jotai X stores
+---
+
+# Jotai X Usage`,
+			);
+
+			// Create skill folder with SKILL.md that references the rules file
+			// BUT the skill folder has a DIFFERENT name than the .mdc file
+			const skillFolder = path.join(skillsDir, "name");
+			await fs.mkdir(skillFolder, { recursive: true });
+			await fs.writeFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				`---
+name: name
+description: Name skill
+---
+
+@.claude/rules/jotai-x.mdc`,
+			);
+
+			// Step 1: Copy .mdc files from rules (creates skills/jotai-x/jotai-x.mdc)
+			await copyMdcFilesFromRules(skillerDir, false, false);
+
+			// Step 2: Delete rules directory (simulating full migration)
+			await deleteRulesDir(skillerDir, false, false);
+
+			// Step 3: Sync - should find the migrated file at skills/jotai-x/jotai-x.mdc
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			// Should NOT have warnings about missing file
+			expect(result.warnings).toHaveLength(0);
+			expect(result.synced).toContain("name");
+
+			// The name skill's SKILL.md should now point to the migrated location
+			const skillMdContent = await fs.readFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				"utf8",
+			);
+			// Should point to the sibling .mdc in the name folder (copied from jotai-x)
+			expect(skillMdContent).toContain("@.claude/skills/name/name.mdc");
+			expect(skillMdContent).not.toContain("@.claude/rules");
+
+			// Verify name/name.mdc was created with the content from jotai-x
+			const mdcContent = await fs.readFile(
+				path.join(skillFolder, "name.mdc"),
+				"utf8",
+			);
+			expect(mdcContent).toContain("# Jotai X Usage");
+		});
+
+		it("includes migrated alwaysApply .mdc files in cursor mode readMarkdownFiles", async () => {
+			const { copyMdcFilesFromRules, deleteRulesDir } = await import(
+				"../src/core/SkillsProcessor"
+			);
+			const { readMarkdownFiles } = await import(
+				"../src/core/FileSystemUtils"
+			);
+
+			const skillerDir = path.join(tmpDir, ".claude");
+			const rulesDir = path.join(skillerDir, "rules");
+
+			await fs.mkdir(rulesDir, { recursive: true });
+
+			// Create .mdc file in rules with alwaysApply: true
+			await fs.writeFile(
+				path.join(rulesDir, "always-rule.mdc"),
+				`---
+description: A cursor-style rule
+alwaysApply: true
+---
+
+# Always Applied Rule Content`,
+			);
+
+			// Step 1: Copy .mdc files from rules to skills
+			await copyMdcFilesFromRules(skillerDir, false, false);
+
+			// Step 2: Delete rules directory
+			await deleteRulesDir(skillerDir, false, false);
+
+			// Step 3: Read files with cursor mode - should include the migrated alwaysApply file
+			const files = await readMarkdownFiles(skillerDir, {
+				merge_strategy: "cursor",
+			});
+
+			// Should find the migrated .mdc file with alwaysApply: true
+			const alwaysRuleFile = files.find((f) =>
+				f.path.includes("always-rule.mdc"),
+			);
+			expect(alwaysRuleFile).toBeDefined();
+			if (alwaysRuleFile) {
+				expect(alwaysRuleFile.path).toContain("skills/always-rule/always-rule.mdc");
+				// Content should have frontmatter stripped
+				expect(alwaysRuleFile.content).toContain("# Always Applied Rule Content");
+				expect(alwaysRuleFile.content).not.toContain("alwaysApply:");
+			}
+		});
+	});
 });
