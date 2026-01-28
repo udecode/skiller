@@ -1,25 +1,36 @@
 # skiller
 
-## 0.7.0
+## 0.7.6
 
 ### Minor Changes
 
-- [#17](https://github.com/udecode/skiller/pull/17) [`dd25cd8`](https://github.com/udecode/skiller/commit/dd25cd8b243fadf29b9fd0e28367b0b959f7874a) Thanks [@zbeyens](https://github.com/zbeyens)! - Make `.claude/skills/` the committed source of truth with bidirectional sync
+**Skills as Source of Truth:**
 
-  **Bidirectional .mdc ↔ SKILL.md sync:**
+- `.claude/skills/` is now the **committed source of truth** for skills (no longer gitignored)
+- **Bidirectional sync** between `.mdc` and `SKILL.md`:
   - Create `.claude/skills/foo.mdc` → auto-generates `.claude/skills/foo/SKILL.md`
   - Create `.claude/skills/foo/SKILL.md` → auto-generates `.claude/skills/foo.mdc`
-  - Uses `synced: true` frontmatter to track sync direction
-  - Edit either file, the other stays in sync
+- Detect sync direction via `@reference` body pattern (replaces `synced: true` frontmatter)
+- Edit either file, the other stays in sync on next `skiller apply`
 
-  **Simplifications:**
-  - Remove skillz MCP integration (skillz directory, MCP tool registration)
-  - Remove `generate_from_rules` and `prune` config options (deprecated warnings added)
-  - Remove `generateSkillsFromRules()` and orphan detection
-  - Stop gitignoring `.claude/skills/` - it's now the committed source
-  - Add path traversal prevention in SkillsUtils.ts
-  - Use explicit safe YAML schema in FrontmatterParser.ts
-  - Add depth limits to recursive functions
+**Simplifications:**
+
+- Remove skillz MCP integration (skillz directory, MCP tool registration)
+- Remove `generate_from_rules` and `prune` config options (deprecated warnings added)
+- Remove `generateSkillsFromRules()` and orphan detection
+- Stop gitignoring `.claude/skills/` - it's now the committed source
+
+**Security:**
+
+- Add path traversal prevention in SkillsUtils.ts
+- Use explicit safe YAML schema in FrontmatterParser.ts
+- Add depth limits to recursive functions
+
+**Bug Fixes:**
+
+- Include `.mdc` files with `alwaysApply: true` from both `rules/` and `skills/` directories in AGENTS.md (cursor mode)
+- Preserve ALL custom frontmatter fields (e.g., `user-invocable`) when syncing SKILL.md → .mdc
+- Auto-delete empty skill folders (directories with neither SKILL.md nor .mdc files)
 
 ## 0.6.3
 

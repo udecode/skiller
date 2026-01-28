@@ -18,6 +18,20 @@ export async function hasSkillMd(dirPath: string): Promise<boolean> {
 }
 
 /**
+ * Checks if a directory contains any .mdc file.
+ */
+export async function hasAnyMdc(dirPath: string): Promise<boolean> {
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    return entries.some(
+      (entry) => entry.isFile() && entry.name.endsWith('.mdc'),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Checks if a directory contains an .mdc file with alwaysApply: true.
  * These directories are valid without SKILL.md since alwaysApply rules
  * are Cursor-style rules, not Claude Code skills.
@@ -77,13 +91,14 @@ export async function isGroupingDir(
 
 /**
  * Walks the skills tree and discovers all skills.
- * Returns skills and any validation warnings.
+ * Returns skills, validation warnings, and deleted empty folders.
  */
 export async function walkSkillsTree(
   root: string,
-): Promise<{ skills: SkillInfo[]; warnings: string[] }> {
+): Promise<{ skills: SkillInfo[]; warnings: string[]; deleted: string[] }> {
   const skills: SkillInfo[] = [];
   const warnings: string[] = [];
+  const deleted: string[] = [];
 
   async function walk(
     currentPath: string,
@@ -126,14 +141,19 @@ export async function walkSkillsTree(
           // This is a grouping directory, recurse into it
           await walk(entryPath, entryRelativePath, depth + 1);
         } else {
-          // Check if this is a valid alwaysApply directory (no SKILL.md expected)
-          const hasAlwaysApply = await hasAlwaysApplyMdc(entryPath);
+          // Check if this directory has any .mdc files
+          const hasMdc = await hasAnyMdc(entryPath);
 
-          if (!hasAlwaysApply) {
-            // This is neither a skill nor a grouping directory - warn about it
-            warnings.push(
-              `Directory '${entryRelativePath}' in .claude/skills has no SKILL.md and contains no sub-skills. It may be malformed or stray.`,
-            );
+          if (!hasMdc) {
+            // No SKILL.md, not a grouping dir, no .mdc files - delete it
+            try {
+              await fs.rm(entryPath, { recursive: true, force: true });
+              deleted.push(entryRelativePath);
+            } catch {
+              warnings.push(
+                `Failed to delete empty directory '${entryRelativePath}'`,
+              );
+            }
           }
         }
       }
@@ -146,7 +166,7 @@ export async function walkSkillsTree(
   }
 
   await walk(root, '', 0);
-  return { skills, warnings };
+  return { skills, warnings, deleted };
 }
 
 /**

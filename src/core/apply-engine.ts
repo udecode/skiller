@@ -959,10 +959,6 @@ export async function updateGitignore(
         );
       } else {
         await updateGitignoreUtil(projectRoot, uniquePaths);
-        logInfo(
-          `Updated .gitignore with ${uniquePaths.length} unique path(s) in the Skiller block.`,
-          dryRun,
-        );
       }
     }
   }

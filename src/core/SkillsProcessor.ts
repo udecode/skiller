@@ -150,10 +150,19 @@ export async function syncMdcToSkillMd(
         }
 
         // Generate SKILL.md with @reference (absolute path)
-        const skillFrontmatter = {
+        // Keep all frontmatter from .mdc except globs and alwaysApply
+        const skillFrontmatter: Record<string, unknown> = {
           name: skillName,
-          description: mdcFrontmatter?.description || `Skill: ${skillName}`,
+          ...Object.fromEntries(
+            Object.entries(mdcFrontmatter || {}).filter(
+              ([key]) => key !== 'globs' && key !== 'alwaysApply',
+            ),
+          ),
         };
+        // Ensure description has a default
+        if (!skillFrontmatter.description) {
+          skillFrontmatter.description = `Skill: ${skillName}`;
+        }
 
         const newSkillMd = `---
 ${yaml.dump(skillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
@@ -178,9 +187,38 @@ ${yaml.dump(skillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
         }
         synced.push(skillName);
       } else if (skillMdContent !== null) {
+        // Check if sibling .mdc has alwaysApply: true - if so, delete SKILL.md
+        if (siblingMdcContent !== null) {
+          const { frontmatter: mdcFrontmatter } =
+            parseFrontmatter(siblingMdcContent);
+
+          if (mdcFrontmatter?.alwaysApply === true) {
+            // .mdc is now an alwaysApply rule - remove the SKILL.md
+            if (dryRun) {
+              logVerboseInfo(
+                `DRY RUN: Would delete ${skillName}/SKILL.md (now alwaysApply rule)`,
+                verbose,
+                dryRun,
+              );
+            } else {
+              await fs.unlink(skillMdPath);
+              logVerboseInfo(
+                `Deleted ${skillName}/SKILL.md (now alwaysApply rule)`,
+                verbose,
+                dryRun,
+              );
+            }
+            synced.push(skillName);
+            continue;
+          }
+        }
+
         // SKILL.md exists - check if it's a reference
-        const { frontmatter: skillFrontmatter, body: skillBody } =
-          parseFrontmatter(skillMdContent);
+        const {
+          frontmatter: skillFrontmatter,
+          rawFrontmatter: skillRawFrontmatter,
+          body: skillBody,
+        } = parseFrontmatter(skillMdContent);
         const refCheck = isReferenceBody(skillBody);
 
         if (refCheck.isReference) {
@@ -193,52 +231,33 @@ ${yaml.dump(skillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
             `.claude/skills/${skillName}/${skillName}.mdc`;
 
           if (isRelativeSiblingRef || isAbsoluteSiblingRef) {
-            // Sibling reference pattern - validate/update frontmatter if .mdc changed
-            if (siblingMdcContent !== null) {
-              const { frontmatter: mdcFrontmatter } =
-                parseFrontmatter(siblingMdcContent);
-
-              // Update SKILL.md frontmatter if description changed in .mdc
-              // Also migrate from relative to absolute path if needed
-              const needsUpdate =
-                (mdcFrontmatter?.description &&
-                  mdcFrontmatter.description !==
-                    skillFrontmatter?.description) ||
-                isRelativeSiblingRef; // Migrate old relative refs to absolute
-
-              if (needsUpdate) {
-                const newFrontmatter = {
-                  name: skillFrontmatter?.name || skillName,
-                  description:
-                    mdcFrontmatter?.description ||
-                    skillFrontmatter?.description ||
-                    `Skill: ${skillName}`,
-                };
-
-                const newSkillMd = `---
-${yaml.dump(newFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
+            // Sibling reference pattern - only migrate path if needed (don't touch frontmatter)
+            if (isRelativeSiblingRef) {
+              // Migrate old relative refs to absolute path, preserving existing frontmatter
+              const newSkillMd = `---
+${yaml.dump(skillFrontmatter || { name: skillName }, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
 @.claude/skills/${skillName}/${skillName}.mdc
 `;
 
-                if (dryRun) {
-                  logVerboseInfo(
-                    `DRY RUN: Would update ${skillName}/SKILL.md frontmatter from .mdc`,
-                    verbose,
-                    dryRun,
-                  );
-                } else {
-                  await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
-                  logVerboseInfo(
-                    `Updated ${skillName}/SKILL.md frontmatter from .mdc`,
-                    verbose,
-                    dryRun,
-                  );
-                }
-                synced.push(skillName);
+              if (dryRun) {
+                logVerboseInfo(
+                  `DRY RUN: Would migrate ${skillName}/SKILL.md to absolute path`,
+                  verbose,
+                  dryRun,
+                );
+              } else {
+                await fs.writeFile(skillMdPath, newSkillMd, 'utf8');
+                logVerboseInfo(
+                  `Migrated ${skillName}/SKILL.md to absolute path`,
+                  verbose,
+                  dryRun,
+                );
               }
+              synced.push(skillName);
             }
+            // If already absolute path, nothing to do - SKILL.md is source of truth for frontmatter
           } else if (refCheck.referencePath) {
             // Pre-0.7 pattern or other external reference - migrate to sibling pattern
             // Determine base path for resolution:
@@ -266,32 +285,26 @@ ${yaml.dump(newFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
               const { frontmatter: refFrontmatter, body: refBody } =
                 parseFrontmatter(referencedContent);
 
-              // Create sibling .mdc with the content
+              // Create sibling .mdc - only keep frontmatter for alwaysApply rules
               let mdcContent: string;
-              if (refFrontmatter && Object.keys(refFrontmatter).length > 0) {
-                const mdcFrontmatterData: Record<string, unknown> = {};
+              if (refFrontmatter?.alwaysApply === true) {
+                // alwaysApply rules keep frontmatter (description since no SKILL.md)
+                const mdcFrontmatterData: Record<string, unknown> = {
+                  alwaysApply: true,
+                };
                 if (refFrontmatter.description) {
                   mdcFrontmatterData.description = refFrontmatter.description;
                 }
-                if (refFrontmatter.globs) {
-                  mdcFrontmatterData.globs = refFrontmatter.globs;
-                }
-                if (refFrontmatter.alwaysApply !== undefined) {
-                  mdcFrontmatterData.alwaysApply = refFrontmatter.alwaysApply;
-                }
 
-                if (Object.keys(mdcFrontmatterData).length > 0) {
-                  mdcContent = `---
+                mdcContent = `---
 ${yaml.dump(mdcFrontmatterData, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
 ${refBody}
 `;
-                } else {
-                  mdcContent = refBody;
-                }
               } else {
-                mdcContent = referencedContent;
+                // Regular skills: body only (description goes in SKILL.md)
+                mdcContent = refBody;
               }
 
               // Update SKILL.md to point to sibling .mdc (absolute path)
@@ -335,29 +348,20 @@ ${yaml.dump(newFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
           }
         } else {
           // Case 3: SKILL.md has full content → generate sibling .mdc, update to @reference
-          // Generate .mdc from SKILL.md body
-          const mdcFrontmatter: Record<string, unknown> = {};
-          if (skillFrontmatter?.description) {
-            mdcFrontmatter.description = skillFrontmatter.description;
-          }
-
-          let mdcContent: string;
-          if (Object.keys(mdcFrontmatter).length > 0) {
-            mdcContent = `---
-${yaml.dump(mdcFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
----
-
-${skillBody}
-`;
-          } else {
-            mdcContent = skillBody;
-          }
+          // Generate .mdc from SKILL.md body (no frontmatter needed - description is in SKILL.md)
+          const mdcContent = skillBody;
 
           // Update SKILL.md to @reference (absolute path)
-          const newSkillFrontmatter = {
-            name: skillFrontmatter?.name || skillName,
-            description: skillFrontmatter?.description || `Skill: ${skillName}`,
-          };
+          // Preserve ALL existing frontmatter (use rawFrontmatter to keep custom fields like user-invocable)
+          // Only add defaults for missing name/description
+          const newSkillFrontmatter: Record<string, unknown> =
+            skillRawFrontmatter ? { ...skillRawFrontmatter } : {};
+          if (!newSkillFrontmatter.name) {
+            newSkillFrontmatter.name = skillName;
+          }
+          if (!newSkillFrontmatter.description) {
+            newSkillFrontmatter.description = `Skill: ${skillName}`;
+          }
 
           const newSkillMd = `---
 ${yaml.dump(newSkillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
@@ -395,12 +399,12 @@ ${yaml.dump(newSkillFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 
 /**
  * Discovers skills in the project's skills directory (.claude/skills).
- * Returns discovered skills and any validation warnings.
+ * Returns discovered skills, validation warnings, and deleted empty folders.
  */
 export async function discoverSkills(
   projectRoot: string,
   skillerDir?: string,
-): Promise<{ skills: SkillInfo[]; warnings: string[] }> {
+): Promise<{ skills: SkillInfo[]; warnings: string[]; deleted: string[] }> {
   // Use .claude/skills
   const skillsPath = skillerDir
     ? path.join(skillerDir, 'skills')
@@ -411,7 +415,7 @@ export async function discoverSkills(
     await fs.access(skillsPath);
   } catch {
     // Skills directory doesn't exist - this is fine, just return empty
-    return { skills: [], warnings: [] };
+    return { skills: [], warnings: [], deleted: [] };
   }
 
   // Walk the skills tree
@@ -482,7 +486,18 @@ export async function propagateSkills(
   }
 
   // Discover and validate skills
-  const { skills, warnings } = await discoverSkills(projectRoot, skillerDir);
+  const { skills, warnings, deleted } = await discoverSkills(
+    projectRoot,
+    skillerDir,
+  );
+
+  if (deleted.length > 0) {
+    logVerboseInfo(
+      `Deleted ${deleted.length} empty folder(s): ${deleted.join(', ')}`,
+      verbose,
+      dryRun,
+    );
+  }
 
   if (warnings.length > 0) {
     for (const warning of warnings) {
@@ -667,30 +682,24 @@ export async function copyMdcFilesFromRules(
       const { frontmatter, body } = parseFrontmatter(content);
       let cleanedContent: string;
 
-      if (frontmatter && Object.keys(frontmatter).length > 0) {
-        const cleanedFrontmatter: Record<string, unknown> = {};
-
-        // Only keep description and alwaysApply: true
+      if (frontmatter?.alwaysApply === true) {
+        // Only alwaysApply rules keep frontmatter (with description since no SKILL.md)
+        const cleanedFrontmatter: Record<string, unknown> = {
+          alwaysApply: true,
+        };
         if (frontmatter.description) {
           cleanedFrontmatter.description = frontmatter.description;
         }
-        if (frontmatter.alwaysApply === true) {
-          cleanedFrontmatter.alwaysApply = true;
-        }
-        // Note: globs and alwaysApply: false are intentionally omitted
 
-        if (Object.keys(cleanedFrontmatter).length > 0) {
-          cleanedContent = `---
+        cleanedContent = `---
 ${yaml.dump(cleanedFrontmatter, { lineWidth: -1, noRefs: true }).trim()}
 ---
 
 ${body}
 `;
-        } else {
-          cleanedContent = body;
-        }
       } else {
-        cleanedContent = content;
+        // Regular skills: strip all frontmatter (description goes in SKILL.md)
+        cleanedContent = body;
       }
 
       if (dryRun) {

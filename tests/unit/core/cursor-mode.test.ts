@@ -129,7 +129,49 @@ With frontmatter.`,
       expect(agentsFile!.content).toContain('custom: metadata');
     });
 
-    it('should only process .mdc files in rules/ directory', async () => {
+    it('should process .mdc files in both rules/ and skills/ directories', async () => {
+      await fs.writeFile(
+        path.join(testDir, 'AGENTS.md'),
+        '# Main Instructions',
+      );
+
+      const rulesDir = path.join(testDir, 'rules');
+      await fs.mkdir(rulesDir, { recursive: true });
+
+      // Create skills/my-skill/my-skill.mdc (sibling to SKILL.md pattern)
+      const skillsDir = path.join(testDir, 'skills');
+      const skillFolder = path.join(skillsDir, 'my-skill');
+      await fs.mkdir(skillFolder, { recursive: true });
+
+      // Create .mdc file in rules/ with alwaysApply: true
+      await fs.writeFile(
+        path.join(rulesDir, 'in-rules.mdc'),
+        `---
+alwaysApply: true
+---
+Content in rules/`,
+      );
+
+      // Create .mdc file in skills/my-skill/ with alwaysApply: true
+      await fs.writeFile(
+        path.join(skillFolder, 'my-skill.mdc'),
+        `---
+alwaysApply: true
+---
+Content in skills/`,
+      );
+
+      const files = await readMarkdownFiles(testDir, {
+        merge_strategy: 'cursor',
+      });
+
+      // Should include AGENTS.md, rules/ .mdc, AND skills/ .mdc with alwaysApply: true
+      expect(files.length).toBe(3);
+      expect(files.some((f) => f.path.includes('in-rules.mdc'))).toBe(true);
+      expect(files.some((f) => f.path.includes('my-skill.mdc'))).toBe(true);
+    });
+
+    it('should exclude .mdc files in other/ directories (non-rules, non-skills)', async () => {
       await fs.writeFile(
         path.join(testDir, 'AGENTS.md'),
         '# Main Instructions',
@@ -150,7 +192,7 @@ alwaysApply: true
 Content in rules/`,
       );
 
-      // Create .mdc file in other/ with alwaysApply: true
+      // Create .mdc file in other/ with alwaysApply: true - should NOT be included
       await fs.writeFile(
         path.join(otherDir, 'not-in-rules.mdc'),
         `---

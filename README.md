@@ -5,12 +5,12 @@ A Claude-centric fork of [ruler](https://github.com/intellectronica/ruler) with 
 ## 1. Skills as Source of Truth
 
 - `.claude/skills/` is the committed source of truth for skills
-- **Bidirectional sync** between `.mdc` and `SKILL.md`:
-  - Create `.claude/skills/foo.mdc` → auto-generates `.claude/skills/foo/SKILL.md`
-  - Create `.claude/skills/foo/SKILL.md` → auto-generates `.claude/skills/foo.mdc`
-- Uses `synced: true` frontmatter to track sync direction
+- **Bidirectional sync** between `.mdc` and `SKILL.md` (sibling pattern):
+  - Create `.claude/skills/foo/foo.mdc` → auto-generates `.claude/skills/foo/SKILL.md`
+  - Create `.claude/skills/foo/SKILL.md` → auto-generates `.claude/skills/foo/foo.mdc`
+- Sync direction detected via `@reference` body pattern (SKILL.md with `@path` = .mdc is source)
 - Edit either file, the other stays in sync on next `skiller apply`
-- Skill folders from `.claude/rules/` are copied to `.claude/skills/`
+- `.claude/rules/` contents are migrated to `.claude/skills/` and rules directory is deleted
 
 ## 2. CLAUDE.md @filename References
 
@@ -84,7 +84,7 @@ Skiller solves this by providing a **single source of truth** for all your AI ag
 | AGENTS.md        | `AGENTS.md`                                        | (pseudo-agent ensuring root `AGENTS.md` exists)  |
 | GitHub Copilot   | `AGENTS.md`                                        | `.vscode/mcp.json`                               |
 | Claude Code      | `CLAUDE.md` (@filename references)                 | `.mcp.json`                                      |
-| OpenAI Codex CLI | `AGENTS.md`                                        | `.codex/config.toml` (MCP via Skillz)            |
+| OpenAI Codex CLI | `AGENTS.md`                                        | `.codex/config.toml`                             |
 | Jules            | `AGENTS.md`                                        | -                                                |
 | Cursor           | `AGENTS.md`                                        | `.cursor/mcp.json`                               |
 | Windsurf         | `AGENTS.md`                                        | `.windsurf/mcp_config.json`                      |
@@ -567,11 +567,12 @@ Skills can be organized flat or nested:
 
 ```
 .claude/skills/
-├── my-skill.mdc           # Standalone skill file (auto-syncs to folder)
 ├── my-skill/
-│   └── SKILL.md           # Generated from my-skill.mdc (synced: true)
+│   ├── my-skill.mdc       # Skill content (body)
+│   └── SKILL.md           # @reference to my-skill.mdc (frontmatter here)
 ├── another-skill/
-│   ├── SKILL.md           # Manually created skill
+│   ├── another-skill.mdc  # Generated from SKILL.md body
+│   ├── SKILL.md           # Manually created skill (now @reference)
 │   ├── helper.py          # Optional: additional resources (scripts)
 │   └── reference.md       # Optional: additional resources (docs)
 ```
@@ -587,25 +588,24 @@ Skiller provides bidirectional sync between `.mdc` files and `SKILL.md` folders:
 
 | Scenario | Sync Direction |
 |----------|---------------|
-| `.mdc` exists, no `SKILL.md` | → Generate `SKILL.md` with `synced: true` |
-| `SKILL.md` has `synced: true` | .mdc → `SKILL.md` (regenerate from .mdc) |
-| `SKILL.md` without `synced: true` | `SKILL.md` → .mdc (SKILL.md is source of truth) |
+| `.mdc` exists, no `SKILL.md` | → Generate `SKILL.md` with `@reference` to .mdc |
+| `SKILL.md` body is `@reference` | .mdc is source of truth (frontmatter in SKILL.md) |
+| `SKILL.md` has full content | → Generate .mdc from body, update SKILL.md to `@reference` |
 
-The `synced: true` frontmatter flag indicates that the `.mdc` file is the source of truth:
+The `@reference` body pattern indicates that the `.mdc` file contains the skill content:
 
 ```yaml
 ---
 name: my-skill
 description: My custom skill
-synced: true
 ---
 
-# Skill content here
+@.claude/skills/my-skill/my-skill.mdc
 ```
 
-### Skill Folders from Rules
+### Rules Migration
 
-Skill folders (directories containing `SKILL.md`) in `.claude/rules/` are automatically copied to `.claude/skills/` during `skiller apply`:
+Content from `.claude/rules/` is automatically migrated to `.claude/skills/` during `skiller apply`, then the rules directory is deleted:
 
 ```
 .claude/rules/docx/
@@ -614,13 +614,16 @@ Skill folders (directories containing `SKILL.md`) in `.claude/rules/` are automa
 └── templates/        # Subdirectory
     └── default.docx  # Template file
 
-→ Copied to:
+→ Migrated to:
 
 .claude/skills/docx/
-├── SKILL.md          # Copied as-is
+├── docx.mdc          # Generated from SKILL.md body
+├── SKILL.md          # Updated to @reference
 ├── script.sh         # Copied automatically
 └── templates/        # Copied automatically
     └── default.docx  # Copied automatically
+
+.claude/rules/ → Deleted after migration
 ```
 
 ### Configuration

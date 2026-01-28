@@ -116,7 +116,7 @@ export async function applyHandler(argv: ApplyArgs): Promise<void> {
       backupPreference,
       skillsEnabled,
     );
-    console.log('Skiller apply completed successfully.');
+    console.log('[skiller] Apply completed successfully.');
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`${ERROR_PREFIX} ${message}`);

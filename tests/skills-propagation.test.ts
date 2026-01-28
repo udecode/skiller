@@ -104,7 +104,7 @@ describe("Skills Discovery and Validation", () => {
 			expect(result.warnings).toHaveLength(0);
 		});
 
-		it("warns about directories without SKILL.md and no sub-skills", async () => {
+		it("deletes directories without SKILL.md and no .mdc files", async () => {
 			const skillsDir = path.join(tmpDir, ".claude", "skills");
 			const validSkill = path.join(skillsDir, "valid-skill");
 			const invalidDir = path.join(skillsDir, "invalid-dir");
@@ -121,8 +121,10 @@ describe("Skills Discovery and Validation", () => {
 
 			expect(result.skills).toHaveLength(1);
 			expect(result.skills[0].name).toBe("valid-skill");
-			expect(result.warnings.length).toBeGreaterThan(0);
-			expect(result.warnings[0]).toContain("invalid-dir");
+			expect(result.deleted).toHaveLength(1);
+			expect(result.deleted[0]).toBe("invalid-dir");
+			// Verify the directory was actually deleted
+			await expect(fs.access(invalidDir)).rejects.toThrow();
 		});
 
 		it("allows grouping directories with no SKILL.md if they contain sub-skills", async () => {
@@ -236,7 +238,7 @@ This is the skill body.
 			expect(content).not.toContain("synced:");
 		});
 
-		it("Case 2: recognizes @reference body as synced (sibling .mdc is source)", async () => {
+		it("Case 2: migrates relative path to absolute, preserves existing frontmatter", async () => {
 			const skillsDir = path.join(tmpDir, ".claude", "skills");
 			const skillFolder = path.join(skillsDir, "synced-skill");
 			await fs.mkdir(skillFolder, { recursive: true });
@@ -252,7 +254,7 @@ description: Old description
 @./synced-skill.mdc`,
 			);
 
-			// Create sibling .mdc with new description
+			// Create sibling .mdc with different description (should NOT update SKILL.md)
 			await fs.writeFile(
 				path.join(skillFolder, "synced-skill.mdc"),
 				`---
@@ -266,12 +268,12 @@ description: New description from mdc
 
 			expect(result.synced).toContain("synced-skill");
 
-			// Verify SKILL.md frontmatter was updated from .mdc and path migrated to absolute
+			// Verify SKILL.md path migrated to absolute BUT frontmatter preserved (not updated from .mdc)
 			const content = await fs.readFile(
 				path.join(skillFolder, SKILL_MD_FILENAME),
 				"utf8",
 			);
-			expect(content).toContain("description: New description from mdc");
+			expect(content).toContain("description: Old description");
 			expect(content).toContain(
 				"@.claude/skills/synced-skill/synced-skill.mdc",
 			);
@@ -298,12 +300,12 @@ description: Original skill
 
 			expect(result.synced).toContain("unsynced-skill");
 
-			// Verify sibling .mdc was created
+			// Verify sibling .mdc was created (no frontmatter - description is in SKILL.md)
 			const mdcContent = await fs.readFile(
 				path.join(skillFolder, "unsynced-skill.mdc"),
 				"utf8",
 			);
-			expect(mdcContent).toContain("description: Original skill");
+			expect(mdcContent).not.toContain("description");
 			expect(mdcContent).toContain("# Original Content");
 
 			// Verify SKILL.md was updated to @reference (absolute path)
@@ -315,6 +317,44 @@ description: Original skill
 				"@.claude/skills/unsynced-skill/unsynced-skill.mdc",
 			);
 			expect(skillContent).not.toContain("synced:");
+		});
+
+		it("Case 3: preserves ALL custom frontmatter fields (user-invocable, etc)", async () => {
+			const skillsDir = path.join(tmpDir, ".claude", "skills");
+			const skillFolder = path.join(skillsDir, "custom-frontmatter-skill");
+			await fs.mkdir(skillFolder, { recursive: true });
+
+			// Create SKILL.md with full content AND custom frontmatter fields
+			await fs.writeFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				`---
+name: custom-frontmatter-skill
+description: A skill with custom frontmatter
+user-invocable: false
+some-other-field: custom-value
+---
+
+# Skill Content`,
+			);
+
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			expect(result.synced).toContain("custom-frontmatter-skill");
+
+			// Verify SKILL.md preserves ALL custom frontmatter fields
+			const skillContent = await fs.readFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				"utf8",
+			);
+			expect(skillContent).toContain("name: custom-frontmatter-skill");
+			expect(skillContent).toContain(
+				"description: A skill with custom frontmatter",
+			);
+			expect(skillContent).toContain("user-invocable: false");
+			expect(skillContent).toContain("some-other-field: custom-value");
+			expect(skillContent).toContain(
+				"@.claude/skills/custom-frontmatter-skill/custom-frontmatter-skill.mdc",
+			);
 		});
 
 		it("migrates root .mdc files to sibling pattern", async () => {
@@ -455,13 +495,13 @@ description: My skill description
 			);
 			expect(skillMdContent).not.toContain("@.claude/rules");
 
-			// Sibling .mdc should be created with content from rules
+			// Sibling .mdc should be created with body only (description is in SKILL.md)
 			const siblingMdcContent = await fs.readFile(
 				path.join(skillFolder, "my-skill.mdc"),
 				"utf8",
 			);
 			expect(siblingMdcContent).toContain("# My Skill Content");
-			expect(siblingMdcContent).toContain("description: My skill description");
+			expect(siblingMdcContent).not.toContain("description");
 		});
 
 		it("skips SKILL.md generation for .mdc files with alwaysApply: true", async () => {
@@ -491,6 +531,60 @@ alwaysApply: true
 				.then(() => true)
 				.catch(() => false);
 			expect(skillMdExists).toBe(false);
+		});
+
+		it("deletes existing SKILL.md when .mdc is updated to alwaysApply: true", async () => {
+			const skillsDir = path.join(tmpDir, ".claude", "skills");
+			const skillFolder = path.join(skillsDir, "converted-to-rule");
+			await fs.mkdir(skillFolder, { recursive: true });
+
+			// Create existing SKILL.md (was a skill before)
+			await fs.writeFile(
+				path.join(skillFolder, SKILL_MD_FILENAME),
+				`---
+name: converted-to-rule
+description: Was a skill
+---
+
+@.claude/skills/converted-to-rule/converted-to-rule.mdc`,
+			);
+
+			// Create .mdc that was updated to alwaysApply: true
+			await fs.writeFile(
+				path.join(skillFolder, "converted-to-rule.mdc"),
+				`---
+description: Now a Cursor rule
+alwaysApply: true
+---
+
+# This is now a rule, not a skill`,
+			);
+
+			// Verify SKILL.md exists before sync
+			const skillMdExistsBefore = await fs
+				.access(path.join(skillFolder, SKILL_MD_FILENAME))
+				.then(() => true)
+				.catch(() => false);
+			expect(skillMdExistsBefore).toBe(true);
+
+			const result = await syncMdcToSkillMd(skillsDir, false, false);
+
+			// Should be synced (deletion counts as sync)
+			expect(result.synced).toContain("converted-to-rule");
+
+			// SKILL.md should be DELETED
+			const skillMdExistsAfter = await fs
+				.access(path.join(skillFolder, SKILL_MD_FILENAME))
+				.then(() => true)
+				.catch(() => false);
+			expect(skillMdExistsAfter).toBe(false);
+
+			// .mdc should still exist
+			const mdcExists = await fs
+				.access(path.join(skillFolder, "converted-to-rule.mdc"))
+				.then(() => true)
+				.catch(() => false);
+			expect(mdcExists).toBe(true);
 		});
 	});
 
@@ -572,8 +666,8 @@ globs:
 			expect(copiedMdc).not.toContain("alwaysApply");
 			// globs should be stripped
 			expect(copiedMdc).not.toContain("globs");
-			// description should be kept
-			expect(copiedMdc).toContain("description: A conditional rule");
+			// description should be stripped (goes in SKILL.md, not .mdc)
+			expect(copiedMdc).not.toContain("description");
 			expect(copiedMdc).toContain("# Conditional Content");
 		});
 
@@ -664,12 +758,12 @@ This is the full skill content.`,
 
 			expect(result.synced).toContain("my-skill");
 
-			// Verify .mdc was generated
+			// Verify .mdc was generated (no frontmatter - description is in SKILL.md)
 			const mdcContent = await fs.readFile(
 				path.join(skillsDir, "my-skill", "my-skill.mdc"),
 				"utf8",
 			);
-			expect(mdcContent).toContain("description: A skill from rules");
+			expect(mdcContent).not.toContain("description");
 			expect(mdcContent).toContain("# My Skill Content");
 
 			// Verify SKILL.md was updated to @reference

@@ -227,8 +227,12 @@ export async function readMarkdownFiles(
         continue;
       }
 
-      // Check if file is in rules/ folder and is .mdc
-      if (normalizedPath.startsWith('rules/') && file.path.endsWith('.mdc')) {
+      // Check if file is in rules/ or skills/ folder and is .mdc
+      if (
+        (normalizedPath.startsWith('rules/') ||
+          normalizedPath.startsWith('skills/')) &&
+        file.path.endsWith('.mdc')
+      ) {
         // Parse frontmatter
         const parsed = parseFrontmatter(file.content);
 

@@ -4,6 +4,8 @@ import { MdcFrontmatter } from '../types';
 export interface ParsedContent {
   /** Parsed frontmatter metadata, or null if none found. */
   frontmatter: MdcFrontmatter | null;
+  /** Raw parsed frontmatter with ALL fields preserved, or null if none found. */
+  rawFrontmatter: Record<string, unknown> | null;
   /** Content body with frontmatter stripped. */
   body: string;
 }
@@ -35,6 +37,7 @@ export function parseFrontmatter(content: string): ParsedContent {
     // No frontmatter found
     return {
       frontmatter: null,
+      rawFrontmatter: null,
       body: content,
     };
   }
@@ -85,6 +88,7 @@ export function parseFrontmatter(content: string): ParsedContent {
     // YAML parsing failed - treat as no frontmatter
     return {
       frontmatter: null,
+      rawFrontmatter: null,
       body: content,
     };
   }
@@ -104,6 +108,7 @@ function extractFrontmatter(
   if (!parsed) {
     return {
       frontmatter: {},
+      rawFrontmatter: null,
       body: body.trim(),
     };
   }
@@ -136,6 +141,7 @@ function extractFrontmatter(
 
   return {
     frontmatter,
+    rawFrontmatter: parsed,
     body: body.trim(),
   };
 }
