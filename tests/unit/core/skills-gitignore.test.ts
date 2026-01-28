@@ -1,5 +1,3 @@
-import * as fs from "fs/promises";
-import * as path from "path";
 import { setupTestProject, teardownTestProject } from "../../harness";
 
 describe("Skills Gitignore Paths", () => {
@@ -13,144 +11,28 @@ describe("Skills Gitignore Paths", () => {
 		await teardownTestProject(testProject.projectRoot);
 	});
 
-	it("gitignores .claude/skills when generated from .claude/rules", async () => {
+	it("returns empty array - skills are now committed source of truth", async () => {
 		const { projectRoot } = testProject;
 		const { getSkillsGitignorePaths } = await import(
 			"../../../src/core/SkillsProcessor"
 		);
-
-		// Create .claude/rules and .claude/skills
-		const skillerDir = path.join(projectRoot, ".claude");
-		const rulesDir = path.join(skillerDir, "rules");
-		const skillsDir = path.join(skillerDir, "skills");
-
-		await fs.mkdir(rulesDir, { recursive: true });
-		await fs.mkdir(skillsDir, { recursive: true });
-
-		// Create a dummy rule file
-		await fs.writeFile(path.join(rulesDir, "test.mdc"), "# Test");
-		// Create a dummy skill
-		await fs.writeFile(path.join(skillsDir, "test"), "# Test skill");
 
 		const paths = await getSkillsGitignorePaths(projectRoot);
 
-		// Should include .claude/skills because .claude/rules exists
-		expect(paths).toContain(path.join(projectRoot, ".claude", "skills"));
-		// Should always include .skillz
-		expect(paths).toContain(path.join(projectRoot, ".skillz"));
+		// In the new architecture, .claude/skills is the source of truth
+		// and should NOT be gitignored - function returns empty array
+		expect(paths).toEqual([]);
 	});
 
-	it("does not gitignore .claude/skills when no .claude/rules exists", async () => {
+	it("returns empty array regardless of how called", async () => {
 		const { projectRoot } = testProject;
 		const { getSkillsGitignorePaths } = await import(
 			"../../../src/core/SkillsProcessor"
 		);
 
-		// Create .claude/skills WITHOUT .claude/rules
-		const skillerDir = path.join(projectRoot, ".claude");
-		const skillsDir = path.join(skillerDir, "skills");
-
-		await fs.mkdir(skillsDir, { recursive: true });
-		await fs.writeFile(path.join(skillsDir, "test"), "# Test skill");
-
+		// Skills are now committed, so no paths need to be gitignored
 		const paths = await getSkillsGitignorePaths(projectRoot);
 
-		// Should NOT include .claude/skills because .claude/rules doesn't exist
-		expect(paths).not.toContain(path.join(projectRoot, ".claude", "skills"));
-		// Should always include .skillz
-		expect(paths).toContain(path.join(projectRoot, ".skillz"));
-	});
-
-	it("gitignores .claude/skills when .claude/rules also exists", async () => {
-		const { projectRoot } = testProject;
-		const { getSkillsGitignorePaths } = await import(
-			"../../../src/core/SkillsProcessor"
-		);
-
-		// Create .claude/skills AND .claude/rules (skills generated from rules)
-		const skillerDir = path.join(projectRoot, ".claude");
-		const rulesDir = path.join(skillerDir, "rules");
-		const skillsDir = path.join(skillerDir, "skills");
-
-		await fs.mkdir(rulesDir, { recursive: true });
-		await fs.mkdir(skillsDir, { recursive: true });
-		await fs.writeFile(path.join(rulesDir, "test.mdc"), "# Test rule");
-		await fs.writeFile(path.join(skillsDir, "test"), "# Test skill");
-
-		const paths = await getSkillsGitignorePaths(projectRoot);
-
-		// Should include .claude/skills because it's generated from .claude/rules
-		expect(paths).toContain(path.join(projectRoot, ".claude", "skills"));
-		// Should always include .skillz
-		expect(paths).toContain(path.join(projectRoot, ".skillz"));
-	});
-
-	it("gitignores .claude/skills when generate_from_rules is true even without .claude/rules", async () => {
-		const { projectRoot } = testProject;
-		const { getSkillsGitignorePaths } = await import(
-			"../../../src/core/SkillsProcessor"
-		);
-
-		// Create .claude/skills WITHOUT .claude/rules
-		const skillerDir = path.join(projectRoot, ".claude");
-		const skillsDir = path.join(skillerDir, "skills");
-
-		await fs.mkdir(skillsDir, { recursive: true });
-		await fs.writeFile(path.join(skillsDir, "test"), "# Test skill");
-
-		// Pass generate_from_rules option
-		const paths = await getSkillsGitignorePaths(projectRoot, {
-			generateFromRules: true,
-		});
-
-		// Should include .claude/skills because generate_from_rules is true
-		expect(paths).toContain(path.join(projectRoot, ".claude", "skills"));
-		// Should always include .skillz
-		expect(paths).toContain(path.join(projectRoot, ".skillz"));
-	});
-
-	it("gitignores .claude/skills when generate_from_rules is true even if directory does not exist", async () => {
-		const { projectRoot } = testProject;
-		const { getSkillsGitignorePaths } = await import(
-			"../../../src/core/SkillsProcessor"
-		);
-
-		// Only create .claude directory, NOT .claude/skills
-		const skillerDir = path.join(projectRoot, ".claude");
-		await fs.mkdir(skillerDir, { recursive: true });
-
-		// Pass generate_from_rules option
-		const paths = await getSkillsGitignorePaths(projectRoot, {
-			generateFromRules: true,
-		});
-
-		// Should include .claude/skills because generate_from_rules is true, even though dir doesn't exist
-		expect(paths).toContain(path.join(projectRoot, ".claude", "skills"));
-		// Should always include .skillz
-		expect(paths).toContain(path.join(projectRoot, ".skillz"));
-	});
-
-	it("does not gitignore .claude/skills when generate_from_rules is false and no .claude/rules", async () => {
-		const { projectRoot } = testProject;
-		const { getSkillsGitignorePaths } = await import(
-			"../../../src/core/SkillsProcessor"
-		);
-
-		// Create .claude/skills WITHOUT .claude/rules
-		const skillerDir = path.join(projectRoot, ".claude");
-		const skillsDir = path.join(skillerDir, "skills");
-
-		await fs.mkdir(skillsDir, { recursive: true });
-		await fs.writeFile(path.join(skillsDir, "test"), "# Test skill");
-
-		// Pass generate_from_rules as false
-		const paths = await getSkillsGitignorePaths(projectRoot, {
-			generateFromRules: false,
-		});
-
-		// Should NOT include .claude/skills because generate_from_rules is false
-		expect(paths).not.toContain(path.join(projectRoot, ".claude", "skills"));
-		// Should always include .skillz
-		expect(paths).toContain(path.join(projectRoot, ".skillz"));
+		expect(paths).toEqual([]);
 	});
 });

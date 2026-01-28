@@ -54,6 +54,7 @@ export function logVerboseInfo(
 // Skills-related constants
 export const SKILLS_DIR = 'skills';
 export const CLAUDE_SKILLS_PATH = '.claude/skills';
-export const SKILLZ_DIR = '.skillz';
 export const SKILL_MD_FILENAME = 'SKILL.md';
-export const SKILLZ_MCP_SERVER_NAME = 'skillz';
+
+// Security: Maximum recursion depth to prevent DoS via deeply nested directories
+export const MAX_RECURSION_DEPTH = 50;

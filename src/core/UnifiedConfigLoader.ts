@@ -103,9 +103,7 @@ export async function loadUnifiedConfig(
   }
 
   // Parse skills configuration
-  let skillsConfig:
-    | { enabled?: boolean; generate_from_rules?: boolean; prune?: boolean }
-    | undefined;
+  let skillsConfig: { enabled?: boolean } | undefined;
   if (tomlRaw && typeof tomlRaw === 'object') {
     const skillsSection = (tomlRaw as Record<string, unknown>).skills;
     if (skillsSection && typeof skillsSection === 'object') {
@@ -113,12 +111,6 @@ export async function loadUnifiedConfig(
       skillsConfig = {};
       if (typeof skillsObj.enabled === 'boolean') {
         skillsConfig.enabled = skillsObj.enabled;
-      }
-      if (typeof skillsObj.generate_from_rules === 'boolean') {
-        skillsConfig.generate_from_rules = skillsObj.generate_from_rules;
-      }
-      if (typeof skillsObj.prune === 'boolean') {
-        skillsConfig.prune = skillsObj.prune;
       }
     }
   }

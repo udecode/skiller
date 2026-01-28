@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { parseFrontmatter } from './FrontmatterParser';
 import { MergeStrategy } from '../types';
+import { MAX_RECURSION_DEPTH } from '../constants';
 
 /**
  * Gets the XDG config directory path, falling back to ~/.config if XDG_CONFIG_HOME is not set.
@@ -153,12 +154,16 @@ export async function readMarkdownFiles(
   const mdFiles: { path: string; content: string }[] = [];
 
   // Gather all markdown files (recursive) first
-  async function walk(dir: string) {
+  async function walk(dir: string, depth: number = 0) {
+    // Security: Prevent DoS via deeply nested directories
+    if (depth >= MAX_RECURSION_DEPTH) {
+      return;
+    }
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        await walk(fullPath);
+        await walk(fullPath, depth + 1);
       } else if (
         entry.isFile() &&
         (entry.name.endsWith('.md') || entry.name.endsWith('.mdc'))
@@ -168,7 +173,7 @@ export async function readMarkdownFiles(
       }
     }
   }
-  await walk(skillerDir);
+  await walk(skillerDir, 0);
 
   // Apply include/exclude filters
   let filteredFiles = mdFiles;
@@ -370,7 +375,11 @@ export async function findAllSkillerDirs(startPath: string): Promise<string[]> {
   const skillerDirs: string[] = [];
 
   // Search the entire directory tree downwards from startPath
-  async function findSkillerDirsRecursive(dir: string) {
+  async function findSkillerDirsRecursive(dir: string, depth: number = 0) {
+    // Security: Prevent DoS via deeply nested directories
+    if (depth >= MAX_RECURSION_DEPTH) {
+      return;
+    }
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
@@ -388,7 +397,7 @@ export async function findAllSkillerDirs(startPath: string): Promise<string[]> {
           } else {
             // Recursively search subdirectories (but skip hidden directories like .git)
             if (!entry.name.startsWith('.')) {
-              await findSkillerDirsRecursive(fullPath);
+              await findSkillerDirsRecursive(fullPath, depth + 1);
             }
           }
         }
@@ -399,7 +408,7 @@ export async function findAllSkillerDirs(startPath: string): Promise<string[]> {
   }
 
   // Start searching from the startPath
-  await findSkillerDirsRecursive(startPath);
+  await findSkillerDirsRecursive(startPath, 0);
 
   // Sort by depth (most specific first) - deeper paths come first
   skillerDirs.sort((a, b) => {

@@ -134,34 +134,12 @@ export async function applyAllAgentConfigs(
       skillsEnabled,
       rootConfig.skills?.enabled,
     );
-    const {
-      propagateSkills,
-      generateSkillsFromRules,
-      copySkillFoldersFromRules,
-    } = await import('./core/SkillsProcessor');
+    const { propagateSkills, copySkillFoldersFromRules } = await import(
+      './core/SkillsProcessor'
+    );
 
-    // Generate skills from .mdc files if enabled
+    // Copy skill folders from rules to skills
     if (skillsEnabledResolved) {
-      const generateFromRules = rootConfig.skills?.generate_from_rules ?? false;
-      if (generateFromRules) {
-        const pruneConfig = rootConfig.skills?.prune;
-        for (const configEntry of hierarchicalConfigs) {
-          const nestedRoot = path.dirname(configEntry.skillerDir);
-          logVerbose(
-            `Generating skills from .mdc files for nested directory: ${nestedRoot}`,
-            verbose,
-          );
-          await generateSkillsFromRules(
-            nestedRoot,
-            configEntry.skillerDir,
-            verbose,
-            dryRun,
-            pruneConfig,
-          );
-        }
-      }
-
-      // Copy skill folders from rules to skills
       for (const configEntry of hierarchicalConfigs) {
         await copySkillFoldersFromRules(
           configEntry.skillerDir,
@@ -236,29 +214,12 @@ export async function applyAllAgentConfigs(
       skillsEnabled,
       singleConfig.config.skills?.enabled,
     );
-    const {
-      propagateSkills,
-      generateSkillsFromRules,
-      copySkillFoldersFromRules,
-    } = await import('./core/SkillsProcessor');
+    const { propagateSkills, copySkillFoldersFromRules } = await import(
+      './core/SkillsProcessor'
+    );
 
-    // Generate skills from .mdc files if enabled
+    // Copy skill folders from rules to skills
     if (skillsEnabledResolved) {
-      const generateFromRules =
-        singleConfig.config.skills?.generate_from_rules ?? false;
-      if (generateFromRules) {
-        logVerbose('Generating skills from .mdc files', verbose);
-        const pruneConfig = singleConfig.config.skills?.prune;
-        await generateSkillsFromRules(
-          projectRoot,
-          singleConfig.skillerDir,
-          verbose,
-          dryRun,
-          pruneConfig,
-        );
-      }
-
-      // Copy skill folders from rules to skills
       await copySkillFoldersFromRules(singleConfig.skillerDir, verbose, dryRun);
     }
 
@@ -300,10 +261,7 @@ export async function applyAllAgentConfigs(
   if (skillsEnabledForGitignore) {
     // Skills enabled by default or explicitly
     const { getSkillsGitignorePaths } = await import('./core/SkillsProcessor');
-    const generateFromRules = loadedConfig.skills?.generate_from_rules ?? false;
-    const skillsPaths = await getSkillsGitignorePaths(projectRoot, {
-      generateFromRules,
-    });
+    const skillsPaths = await getSkillsGitignorePaths(projectRoot);
     allGeneratedPaths = [...generatedPaths, ...skillsPaths];
   }
 
