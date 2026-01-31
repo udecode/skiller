@@ -1,5 +1,11 @@
 # skiller
 
+## 0.7.8
+
+### Patch Changes
+
+- Add `gitignore` option to agent configs (e.g., `[agents.claude]`) to control whether output files are added to .gitignore (defaults to `true`)
+
 ## 0.7.7
 
 ### Minor Changes

@@ -469,18 +469,23 @@ export async function applyConfigurationsToAgents(
     logVerbose(`Processing agent: ${agent.getName()}`, verbose);
     const agentConfig = config.agentConfigs[agent.getIdentifier()];
 
-    // Collect output paths for .gitignore
+    // Collect output paths for .gitignore (unless agent config disables it)
     const outputPaths = getAgentOutputPaths(agent, projectRoot, agentConfig);
     logVerbose(
       `Agent ${agent.getName()} output paths: ${outputPaths.join(', ')}`,
       verbose,
     );
-    generatedPaths.push(...outputPaths);
 
-    // Only add the backup file paths to the gitignore list if backups are enabled
-    if (backup) {
-      const backupPaths = outputPaths.map((p) => `${p}.bak`);
-      generatedPaths.push(...backupPaths);
+    // Only add to gitignore if agent config allows (defaults to true)
+    const shouldGitignore = agentConfig?.gitignore !== false;
+    if (shouldGitignore) {
+      generatedPaths.push(...outputPaths);
+
+      // Only add the backup file paths to the gitignore list if backups are enabled
+      if (backup) {
+        const backupPaths = outputPaths.map((p) => `${p}.bak`);
+        generatedPaths.push(...backupPaths);
+      }
     }
 
     if (dryRun) {

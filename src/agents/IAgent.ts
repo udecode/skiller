@@ -16,6 +16,8 @@ export interface IAgentConfig {
   outputPathConfig?: string;
   /** MCP propagation config for this agent. */
   mcp?: McpConfig;
+  /** Control whether to add agent output files to .gitignore. Defaults to true. */
+  gitignore?: boolean;
 }
 
 export interface IAgent {
