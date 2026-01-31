@@ -244,6 +244,9 @@ export async function loadConfig(
         }
         cfg.mcp = mcpCfg;
       }
+      if (typeof sectionObj.gitignore === 'boolean') {
+        cfg.gitignore = sectionObj.gitignore;
+      }
       agentConfigs[name] = cfg;
     }
   }

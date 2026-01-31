@@ -34,6 +34,7 @@ merge_strategy = "merge"
 [agents.claude]
 enabled = true
 output_path = "CLAUDE.md"
+gitignore = false
 
 # Cursor (secondary agent)
 [agents.cursor]
