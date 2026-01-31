@@ -58,7 +58,7 @@ enabled = true
     expect(gitignoreContent).not.toContain('.claude/skills');
   });
 
-  it('should respect agent-level gitignore = false config', async () => {
+  it('should respect agent-level gitignore = false config for both output files and MCP files', async () => {
     const { projectRoot } = testProject;
 
     // Create .claude directory with skiller.toml that disables gitignore for claude agent
@@ -67,6 +67,9 @@ enabled = true
 
     const tomlContent = `
 [gitignore]
+enabled = true
+
+[mcp]
 enabled = true
 
 [agents.claude]
@@ -81,12 +84,26 @@ enabled = true
     // Create minimal AGENTS.md
     await fs.writeFile(path.join(skillerDir, 'AGENTS.md'), '# Test');
 
-    // Run apply with both agents
+    // Create a minimal MCP config to trigger MCP file generation
+    const mcpConfig = {
+      mcpServers: {
+        test: {
+          command: 'node',
+          args: ['test.js'],
+        },
+      },
+    };
+    await fs.writeFile(
+      path.join(skillerDir, 'mcp.json'),
+      JSON.stringify(mcpConfig, null, 2),
+    );
+
+    // Run apply with both agents and MCP enabled
     await applyAllAgentConfigs(
       projectRoot,
       ['claude', 'codex'],
       undefined, // configPath
-      false, // cliMcpEnabled
+      true, // cliMcpEnabled
       undefined, // cliMcpStrategy
       true, // cliGitignoreEnabled
       false, // verbose
@@ -103,6 +120,8 @@ enabled = true
 
     // CLAUDE.md should NOT be in gitignore (gitignore = false)
     expect(gitignoreContent).not.toContain('CLAUDE.md');
+    // Claude's MCP file (.mcp.json) should also NOT be in gitignore (gitignore = false)
+    expect(gitignoreContent).not.toContain('.mcp.json');
     // But AGENTS.md should be in gitignore (default gitignore = true for codex)
     expect(gitignoreContent).toContain('AGENTS.md');
     // And .codex/config.toml should be in gitignore

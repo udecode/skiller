@@ -616,7 +616,13 @@ async function handleMcpConfiguration(
     return;
   }
 
-  await updateGitignoreForMcpFile(dest, projectRoot, generatedPaths, backup);
+  await updateGitignoreForMcpFile(
+    dest,
+    projectRoot,
+    generatedPaths,
+    agentConfig,
+    backup,
+  );
   await applyMcpConfiguration(
     agent,
     filteredMcpJson!, // Safe: hasServers check above ensures this is non-null
@@ -635,8 +641,15 @@ async function updateGitignoreForMcpFile(
   dest: string,
   projectRoot: string,
   generatedPaths: string[],
+  agentConfig: IAgentConfig | undefined,
   backup = true,
 ): Promise<void> {
+  // Only add to gitignore if agent config allows (defaults to true)
+  const shouldGitignore = agentConfig?.gitignore !== false;
+  if (!shouldGitignore) {
+    return;
+  }
+
   if (dest.startsWith(projectRoot)) {
     const relativeDest = path.relative(projectRoot, dest);
     generatedPaths.push(relativeDest);

@@ -1,6 +1,6 @@
 # skiller
 
-## 0.7.9
+## 0.7.10
 
 ### Patch Changes
 
