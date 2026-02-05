@@ -33,5 +33,16 @@ describe('RooCodeAgent Unit Tests', () => {
     it('returns correct MCP server key', () => {
       expect(agent.getMcpServerKey()).toBe('mcpServers');
     });
+
+    it('should support native skills', () => {
+      const agent = new RooCodeAgent();
+      expect(agent.supportsNativeSkills?.()).toBe(true);
+    });
+
+    it('should return .roo/skills path', () => {
+      const agent = new RooCodeAgent();
+      const projectRoot = '/test/project';
+      expect(agent.getSkillsPath?.(projectRoot)).toBe('/test/project/.roo/skills');
+    });
   });
 });

@@ -434,17 +434,91 @@ export async function discoverSkills(
 }
 
 /**
- * Gets the paths that skills will generate, for gitignore purposes.
- * In the new architecture, .claude/skills is the source of truth and should NOT be gitignored.
- * This function now returns an empty array as skills are committed.
+ * Copies skills from source directory to target agent's skills directory.
+ * Validates skill structure and returns copy count and warnings.
  */
-export async function getSkillsGitignorePaths(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _projectRoot: string,
-): Promise<string[]> {
-  // In the new architecture, .claude/skills is the source of truth and committed.
-  // No skills-related paths need to be gitignored.
-  return [];
+export async function copySkillsToAgent(
+  sourceSkillsDir: string,
+  targetSkillsDir: string,
+  verbose: boolean,
+  dryRun: boolean,
+): Promise<{ copied: number; warnings: string[] }> {
+  const warnings: string[] = [];
+  let copied = 0;
+
+  try {
+    await fs.access(sourceSkillsDir);
+  } catch {
+    // Source directory doesn't exist
+    return { copied: 0, warnings: [] };
+  }
+
+  // Use walkSkillsTree to discover skills
+  const skillsTree = await walkSkillsTree(sourceSkillsDir);
+
+  // Validate and copy each skill
+  for (const skill of skillsTree.skills) {
+    // skill.path is absolute, use it directly
+    const skillPath = skill.path;
+    const skillMdPath = path.join(skillPath, SKILL_MD_FILENAME);
+
+    // Validate: skill must have SKILL.md
+    try {
+      await fs.access(skillMdPath);
+    } catch {
+      warnings.push(
+        `Skill '${skill.name}' missing required SKILL.md file, skipping`,
+      );
+      continue;
+    }
+
+    // Copy skill directory to target using relative path
+    const relativeSkillPath = path.relative(sourceSkillsDir, skill.path);
+    const targetSkillPath = path.join(targetSkillsDir, relativeSkillPath);
+
+    if (!dryRun) {
+      await copySkillsDirectory(skillPath, targetSkillPath);
+    }
+
+    logVerboseInfo(
+      dryRun
+        ? `DRY RUN: Would copy skill '${skill.name}' to ${targetSkillsDir}`
+        : `Copied skill '${skill.name}' to ${targetSkillsDir}`,
+      verbose,
+      dryRun,
+    );
+    copied++;
+  }
+
+  return { copied, warnings };
+}
+
+/**
+ * Gets the paths that skills will generate, for gitignore purposes.
+ * Collects paths from all agents with native skills support, excluding the source (.claude/skills).
+ */
+export function getSkillsGitignorePaths(
+  projectRoot: string,
+  agents: IAgent[],
+): string[] {
+  const paths: string[] = [];
+  const sourceSkillsPath = path.join(projectRoot, CLAUDE_SKILLS_PATH);
+
+  for (const agent of agents) {
+    if (agent.supportsNativeSkills?.() && agent.getSkillsPath) {
+      const skillsPath = agent.getSkillsPath(projectRoot);
+      if (skillsPath && skillsPath !== sourceSkillsPath) {
+        // Convert to relative path for gitignore
+        const relativePath = path.relative(projectRoot, skillsPath);
+        // Deduplicate paths
+        if (!paths.includes(relativePath)) {
+          paths.push(relativePath);
+        }
+      }
+    }
+  }
+
+  return paths;
 }
 
 /**
@@ -454,7 +528,7 @@ export async function getSkillsGitignorePaths(
  */
 export async function propagateSkills(
   projectRoot: string,
-  _agents: IAgent[],
+  agents: IAgent[],
   skillsEnabled: boolean,
   verbose: boolean,
   dryRun: boolean,
@@ -522,6 +596,41 @@ export async function propagateSkills(
   }
 
   logVerboseInfo(`Discovered ${skills.length} skill(s)`, verbose, dryRun);
+
+  // Copy skills to all agents with native skills support
+  const destinationPaths = new Set<string>();
+
+  for (const agent of agents) {
+    if (agent.supportsNativeSkills?.() && agent.getSkillsPath) {
+      const targetPath = agent.getSkillsPath(projectRoot);
+      if (targetPath && targetPath !== skillsDir) {
+        // Deduplicate shared paths
+        destinationPaths.add(targetPath);
+      }
+    }
+  }
+
+  // Copy skills to each unique destination
+  for (const targetPath of destinationPaths) {
+    const result = await copySkillsToAgent(
+      skillsDir,
+      targetPath,
+      verbose,
+      dryRun,
+    );
+
+    if (result.copied > 0) {
+      logVerboseInfo(
+        `Copied ${result.copied} skill(s) to ${targetPath}`,
+        verbose,
+        dryRun,
+      );
+    }
+
+    for (const warning of result.warnings) {
+      logWarn(warning, dryRun);
+    }
+  }
 }
 
 /**

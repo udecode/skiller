@@ -77,4 +77,12 @@ export interface IAgent {
    * Defaults to false if not implemented.
    */
   supportsNativeSkills?(): boolean;
+
+  /**
+   * Returns the skills directory path for this agent.
+   * Returns null if agent doesn't support native skills or wants to opt out.
+   * @param projectRoot The root directory of the project
+   * @returns Absolute path to the agent's skills directory, or null if not supported
+   */
+  getSkillsPath?(projectRoot: string): string | null;
 }

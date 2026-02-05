@@ -1,4 +1,7 @@
 import { setupTestProject, teardownTestProject } from "../../harness";
+import { ClaudeAgent } from "../../../src/agents/ClaudeAgent";
+import { CodexCliAgent } from "../../../src/agents/CodexCliAgent";
+import { CursorAgent } from "../../../src/agents/CursorAgent";
 
 describe("Skills Gitignore Paths", () => {
 	let testProject: { projectRoot: string };
@@ -11,28 +14,36 @@ describe("Skills Gitignore Paths", () => {
 		await teardownTestProject(testProject.projectRoot);
 	});
 
-	it("returns empty array - skills are now committed source of truth", async () => {
+	it("returns empty array when no agents have skills support", async () => {
 		const { projectRoot } = testProject;
 		const { getSkillsGitignorePaths } = await import(
 			"../../../src/core/SkillsProcessor"
 		);
 
-		const paths = await getSkillsGitignorePaths(projectRoot);
+		// No agents = no skills paths
+		const paths = getSkillsGitignorePaths(projectRoot, []);
 
-		// In the new architecture, .claude/skills is the source of truth
-		// and should NOT be gitignored - function returns empty array
 		expect(paths).toEqual([]);
 	});
 
-	it("returns empty array regardless of how called", async () => {
+	it("returns agent skills paths but excludes source (.claude/skills)", async () => {
 		const { projectRoot } = testProject;
 		const { getSkillsGitignorePaths } = await import(
 			"../../../src/core/SkillsProcessor"
 		);
 
-		// Skills are now committed, so no paths need to be gitignored
-		const paths = await getSkillsGitignorePaths(projectRoot);
+		const agents = [
+			new ClaudeAgent(),
+			new CodexCliAgent(),
+			new CursorAgent(),
+		];
 
-		expect(paths).toEqual([]);
+		// .claude/skills is the source (should NOT be in gitignore)
+		// .codex/skills and .cursor/skills should be in gitignore
+		const paths = getSkillsGitignorePaths(projectRoot, agents);
+
+		expect(paths).toContain('.codex/skills');
+		expect(paths).toContain('.cursor/skills');
+		expect(paths).not.toContain('.claude/skills');
 	});
 });

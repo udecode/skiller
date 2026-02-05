@@ -79,4 +79,12 @@ export class OpenCodeAgent implements IAgent {
   supportsMcpRemote(): boolean {
     return true;
   }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return path.join(projectRoot, '.opencode/skill');
+  }
 }

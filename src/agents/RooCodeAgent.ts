@@ -134,4 +134,12 @@ export class RooCodeAgent implements IAgent {
   getMcpServerKey(): string {
     return 'mcpServers';
   }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return path.join(projectRoot, '.roo/skills');
+  }
 }

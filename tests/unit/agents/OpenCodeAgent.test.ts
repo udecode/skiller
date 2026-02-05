@@ -112,4 +112,15 @@ describe('OpenCodeAgent', () => {
       }, null, 2)
     );
   });
+
+  it('should support native skills', () => {
+    const agent = new OpenCodeAgent();
+    expect(agent.supportsNativeSkills?.()).toBe(true);
+  });
+
+  it('should return .opencode/skill path (singular)', () => {
+    const agent = new OpenCodeAgent();
+    const projectRoot = '/test/project';
+    expect(agent.getSkillsPath?.(projectRoot)).toBe('/test/project/.opencode/skill');
+  });
 });

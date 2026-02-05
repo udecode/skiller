@@ -155,4 +155,15 @@ describe("CopilotAgent", () => {
 			await teardownTestProject(projectRoot);
 		}
 	});
+
+	it("should support native skills", () => {
+		const agent = new CopilotAgent();
+		expect(agent.supportsNativeSkills?.()).toBe(true);
+	});
+
+	it("should return .claude/skills path (shared with Claude)", () => {
+		const agent = new CopilotAgent();
+		const projectRoot = "/test/project";
+		expect(agent.getSkillsPath?.(projectRoot)).toBe("/test/project/.claude/skills");
+	});
 });

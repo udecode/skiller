@@ -1,0 +1,256 @@
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
+import { ClaudeAgent } from '../../../src/agents/ClaudeAgent';
+import { CodexCliAgent } from '../../../src/agents/CodexCliAgent';
+import { CopilotAgent } from '../../../src/agents/CopilotAgent';
+
+describe('Skills Processor', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skills-processor-test-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('copySkillsToAgent', () => {
+    it('should copy single skill folder with SKILL.md', async () => {
+      // Setup source skills
+      const sourceDir = path.join(tmpDir, 'source');
+      const targetDir = path.join(tmpDir, 'target');
+      const skillDir = path.join(sourceDir, 'test-skill');
+
+      await fs.mkdir(skillDir, { recursive: true });
+      const skillContent = `---
+name: test-skill
+description: Test skill
+---
+
+# Test Skill`;
+      await fs.writeFile(path.join(skillDir, 'SKILL.md'), skillContent);
+
+      const { copySkillsToAgent } = await import('../../../src/core/SkillsProcessor');
+
+      const result = await copySkillsToAgent(sourceDir, targetDir, false, false);
+
+      expect(result.copied).toBe(1);
+      expect(result.warnings).toHaveLength(0);
+
+      // Verify skill was copied
+      const targetSkillPath = path.join(targetDir, 'test-skill', 'SKILL.md');
+      const content = await fs.readFile(targetSkillPath, 'utf8');
+      expect(content).toContain('Test Skill');
+      expect(content).toContain('name: test-skill');
+    });
+
+    it('should preserve directory structure when copying', async () => {
+      const sourceDir = path.join(tmpDir, 'source');
+      const targetDir = path.join(tmpDir, 'target');
+      const nestedSkillDir = path.join(sourceDir, 'category', 'test-skill');
+
+      await fs.mkdir(nestedSkillDir, { recursive: true });
+      const skillContent = `---
+name: test-skill
+description: Nested skill
+---
+
+# Nested Skill`;
+      await fs.writeFile(path.join(nestedSkillDir, 'SKILL.md'), skillContent);
+      await fs.writeFile(path.join(nestedSkillDir, 'helper.js'), 'console.log("helper");');
+
+      const { copySkillsToAgent } = await import('../../../src/core/SkillsProcessor');
+
+      const result = await copySkillsToAgent(sourceDir, targetDir, false, false);
+
+      expect(result.copied).toBe(1);
+
+      // Verify nested structure preserved
+      const targetSkillMd = path.join(targetDir, 'category', 'test-skill', 'SKILL.md');
+      const targetHelper = path.join(targetDir, 'category', 'test-skill', 'helper.js');
+
+      expect(await fs.readFile(targetSkillMd, 'utf8')).toContain('Nested Skill');
+      expect(await fs.readFile(targetHelper, 'utf8')).toBe('console.log("helper");');
+    });
+
+    it('should skip folders without SKILL.md', async () => {
+      const sourceDir = path.join(tmpDir, 'source');
+      const targetDir = path.join(tmpDir, 'target');
+      const invalidSkillDir = path.join(sourceDir, 'invalid-skill');
+
+      await fs.mkdir(invalidSkillDir, { recursive: true });
+      await fs.writeFile(path.join(invalidSkillDir, 'other.md'), 'Not a skill');
+
+      const { copySkillsToAgent } = await import('../../../src/core/SkillsProcessor');
+
+      const result = await copySkillsToAgent(sourceDir, targetDir, false, false);
+
+      // walkSkillsTree deletes empty dirs, so no skills found and no warnings
+      expect(result.copied).toBe(0);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it('should respect dry-run flag and not create files', async () => {
+      const sourceDir = path.join(tmpDir, 'source');
+      const targetDir = path.join(tmpDir, 'target');
+      const skillDir = path.join(sourceDir, 'test-skill');
+
+      await fs.mkdir(skillDir, { recursive: true });
+      const skillContent = `---
+name: test-skill
+description: Test skill
+---
+
+# Test Skill`;
+      await fs.writeFile(path.join(skillDir, 'SKILL.md'), skillContent);
+
+      const { copySkillsToAgent } = await import('../../../src/core/SkillsProcessor');
+
+      const result = await copySkillsToAgent(sourceDir, targetDir, false, true);
+
+      expect(result.copied).toBe(1);
+
+      // Verify no files created in dry-run
+      await expect(fs.access(targetDir)).rejects.toThrow();
+    });
+  });
+
+  describe('propagateSkills with multiple agents', () => {
+    it('should copy skills to all agents with native skills support', async () => {
+      // Setup source skills with proper YAML frontmatter
+      const sourceDir = path.join(tmpDir, '.claude', 'skills');
+      const skillDir = path.join(sourceDir, 'test-skill');
+
+      await fs.mkdir(skillDir, { recursive: true });
+      const skillContent = `---
+name: test-skill
+description: Test skill for unit testing
+---
+
+# Test Skill
+
+This is a test skill.`;
+      await fs.writeFile(path.join(skillDir, 'SKILL.md'), skillContent);
+
+      const agents = [
+        new ClaudeAgent(),
+        new CodexCliAgent(),
+        new CopilotAgent()
+      ];
+
+      const { propagateSkills } = await import('../../../src/core/SkillsProcessor');
+
+      await propagateSkills(tmpDir, agents, true, false, false);
+
+      // Verify skills copied to Codex (Claude/Copilot share same path with source)
+      const codexSkillPath = path.join(tmpDir, '.codex', 'skills', 'test-skill', 'SKILL.md');
+      const copiedContent = await fs.readFile(codexSkillPath, 'utf8');
+      // After syncMdcToSkillMd, body is converted to @reference, so check metadata
+      expect(copiedContent).toContain('name: test-skill');
+      expect(copiedContent).toContain('description: Test skill for unit testing');
+    });
+
+    it('should deduplicate shared paths (Claude/Copilot/Kilo)', async () => {
+      const sourceDir = path.join(tmpDir, '.claude', 'skills');
+      const skillDir = path.join(sourceDir, 'test-skill');
+
+      await fs.mkdir(skillDir, { recursive: true });
+      const skillContent = `---
+name: test-skill
+description: Shared skill
+---
+
+# Shared Skill`;
+      await fs.writeFile(path.join(skillDir, 'SKILL.md'), skillContent);
+
+      const agents = [
+        new ClaudeAgent(),
+        new CopilotAgent()
+      ];
+
+      const { propagateSkills } = await import('../../../src/core/SkillsProcessor');
+
+      // Claude and Copilot share .claude/skills (which is the source), so no copy needed
+      await propagateSkills(tmpDir, agents, true, false, false);
+
+      // Verify source still exists (might be converted to @reference by syncMdcToSkillMd)
+      const sharedSkillPath = path.join(tmpDir, '.claude', 'skills', 'test-skill', 'SKILL.md');
+      const content = await fs.readFile(sharedSkillPath, 'utf8');
+      // Check for skill metadata (syncMdcToSkillMd may convert body to @reference)
+      expect(content).toContain('name: test-skill');
+    });
+
+    it('should skip agents without native skills support', async () => {
+      const sourceDir = path.join(tmpDir, '.claude', 'skills');
+      await fs.mkdir(sourceDir, { recursive: true });
+
+      // Mock agent without skills support
+      const mockAgent = {
+        getIdentifier: () => 'mock',
+        getName: () => 'Mock Agent',
+        getDefaultOutputPath: () => '/mock/path',
+        applySkillerConfig: async () => {},
+        supportsNativeSkills: () => false,
+        getSkillsPath: () => null
+      };
+
+      const agents = [mockAgent as any];
+
+      const { propagateSkills } = await import('../../../src/core/SkillsProcessor');
+
+      // Should not throw, just skip silently
+      await expect(propagateSkills(tmpDir, agents, true, false, false)).resolves.not.toThrow();
+    });
+  });
+
+  describe('getSkillsGitignorePaths', () => {
+    it('should collect paths from all agents with native skills', () => {
+      const agents = [
+        new ClaudeAgent(),
+        new CodexCliAgent(),
+        new CopilotAgent()
+      ];
+
+      const { getSkillsGitignorePaths } = require('../../../src/core/SkillsProcessor');
+
+      const paths = getSkillsGitignorePaths(tmpDir, agents);
+
+      // Should include .codex/skills but NOT .claude/skills (source)
+      expect(paths).toContain('.codex/skills');
+      expect(paths).not.toContain('.claude/skills');
+    });
+
+    it('should return relative paths from project root', () => {
+      const agents = [new CodexCliAgent()];
+
+      const { getSkillsGitignorePaths } = require('../../../src/core/SkillsProcessor');
+
+      const paths = getSkillsGitignorePaths(tmpDir, agents);
+
+      // All paths should be relative
+      paths.forEach((p: string) => {
+        expect(p.startsWith('.')).toBe(true);
+        expect(path.isAbsolute(p)).toBe(false);
+      });
+    });
+
+    it('should handle agents returning null from getSkillsPath', () => {
+      const mockAgent = {
+        getIdentifier: () => 'mock',
+        getName: () => 'Mock',
+        supportsNativeSkills: () => true,
+        getSkillsPath: () => null
+      };
+
+      const agents = [mockAgent as any];
+
+      const { getSkillsGitignorePaths } = require('../../../src/core/SkillsProcessor');
+
+      const paths = getSkillsGitignorePaths(tmpDir, agents);
+
+      expect(paths).toHaveLength(0);
+    });
+  });
+});

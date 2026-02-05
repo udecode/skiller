@@ -78,4 +78,8 @@ export class CursorAgent extends AgentsMdAgent {
     // Cursor has native support for rules via .cursor/rules/
     return true;
   }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return path.join(projectRoot, '.cursor/skills');
+  }
 }

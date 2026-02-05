@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { IAgent, IAgentConfig } from './IAgent';
 import { AgentsMdAgent } from './AgentsMdAgent';
 
@@ -54,5 +55,13 @@ export class CopilotAgent implements IAgent {
 
   supportsMcpRemote(): boolean {
     return true;
+  }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return path.join(projectRoot, '.claude/skills');
   }
 }

@@ -72,4 +72,15 @@ describe("GeminiCliAgent", () => {
 			await teardownTestProject(projectRoot);
 		}
 	});
+
+	it("should support native skills", () => {
+		const agent = new GeminiCliAgent();
+		expect(agent.supportsNativeSkills?.()).toBe(true);
+	});
+
+	it("should return .gemini/skills path", () => {
+		const agent = new GeminiCliAgent();
+		const projectRoot = "/test/project";
+		expect(agent.getSkillsPath?.(projectRoot)).toBe("/test/project/.gemini/skills");
+	});
 });

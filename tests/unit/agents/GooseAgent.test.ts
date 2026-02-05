@@ -67,4 +67,15 @@ describe('GooseAgent', () => {
   it('should return empty string for MCP server key since MCP is not supported', () => {
     expect(agent.getMcpServerKey()).toBe('');
   });
+
+  it('should support native skills', () => {
+    const agent = new GooseAgent();
+    expect(agent.supportsNativeSkills?.()).toBe(true);
+  });
+
+  it('should return .agents/skills path (shared with Amp)', () => {
+    const agent = new GooseAgent();
+    const projectRoot = '/test/project';
+    expect(agent.getSkillsPath?.(projectRoot)).toBe('/test/project/.agents/skills');
+  });
 });

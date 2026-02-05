@@ -218,5 +218,16 @@ describe("AmpAgent", () => {
 			// mtime should be unchanged because write was skipped
 			expect(statAfter.mtimeMs).toBe(statBefore.mtimeMs);
 		});
+
+		it("should support native skills", () => {
+			const agent = new AmpAgent();
+			expect(agent.supportsNativeSkills?.()).toBe(true);
+		});
+
+		it("should return .agents/skills path (shared with Goose)", () => {
+			const agent = new AmpAgent();
+			const projectRoot = "/test/project";
+			expect(agent.getSkillsPath?.(projectRoot)).toBe("/test/project/.agents/skills");
+		});
 	});
 });

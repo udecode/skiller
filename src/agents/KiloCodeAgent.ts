@@ -34,4 +34,12 @@ export class KiloCodeAgent extends AbstractAgent {
   supportsMcpRemote(): boolean {
     return true;
   }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return path.join(projectRoot, '.claude/skills');
+  }
 }
