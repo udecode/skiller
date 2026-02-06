@@ -1,5 +1,4 @@
-import yargs, { Argv } from 'yargs';
-import { hideBin } from 'yargs/helpers';
+import type { Argv } from 'yargs';
 import { applyHandler, initHandler, revertHandler } from './handlers';
 import { ApplyArgs, InitArgs, RevertArgs } from './handlers';
 import { getAgentIdentifiersForCliHelp } from '../agents/index';
@@ -7,7 +6,16 @@ import { getAgentIdentifiersForCliHelp } from '../agents/index';
 /**
  * Sets up and parses CLI commands.
  */
-export function run(): void {
+export async function run(): Promise<void> {
+  const dynamicImport = new Function(
+    'modulePath',
+    'return import(modulePath);',
+  ) as <T>(modulePath: string) => Promise<T>;
+  const [{ default: yargs }, { hideBin }] = await Promise.all([
+    dynamicImport<typeof import('yargs')>('yargs'),
+    dynamicImport<typeof import('yargs/helpers')>('yargs/helpers'),
+  ]);
+
   yargs(hideBin(process.argv))
     .scriptName('skiller')
     .usage('$0 <command> [options]')

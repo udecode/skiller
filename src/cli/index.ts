@@ -2,4 +2,7 @@
 
 import { run } from './commands';
 
-run();
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

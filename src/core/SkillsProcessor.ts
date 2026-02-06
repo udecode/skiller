@@ -275,21 +275,25 @@ ${yaml.dump(skillFrontmatter || { name: skillName }, { lineWidth: -1, noRefs: tr
               );
             }
 
-            // One-time migration: for old @.claude/rules/ references, look at the
-            // already-migrated skills location. After migration, SKILL.md will have
-            // @.claude/skills/ references, so this code path won't be hit again.
-            let actualPath = referencedPath;
+            // One-time migration: for old @.claude/rules/ references, prefer the
+            // original rules path if it exists, then fall back to migrated skills.
+            const candidatePaths: string[] = [referencedPath];
             if (refCheck.referencePath?.includes('/rules/')) {
               const refFileName = path.basename(refCheck.referencePath);
               const refBaseName = path.basename(refFileName, '.mdc');
-              actualPath = path.join(skillsDir, refBaseName, refFileName);
+              candidatePaths.push(path.join(skillsDir, refBaseName, refFileName));
             }
 
             let referencedContent: string | null = null;
-            try {
-              referencedContent = await fs.readFile(actualPath, 'utf8');
-            } catch {
-              // File not found
+            let actualPath = referencedPath;
+            for (const candidatePath of candidatePaths) {
+              try {
+                referencedContent = await fs.readFile(candidatePath, 'utf8');
+                actualPath = candidatePath;
+                break;
+              } catch {
+                // Try next candidate
+              }
             }
 
             if (referencedContent === null) {
