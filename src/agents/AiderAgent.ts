@@ -85,7 +85,8 @@ export class AiderAgent implements IAgent {
   }
 
   getMcpServerKey(): string {
-    return this.agentsMdAgent.getMcpServerKey();
+    // Aider uses the standard `.mcp.json` schema key.
+    return 'mcpServers';
   }
 
   supportsMcpStdio(): boolean {
