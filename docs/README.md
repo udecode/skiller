@@ -5,7 +5,6 @@ Start here if you want the short, accurate version.
 - `docs/cli.md`: commands + flags
 - `docs/config.md`: `skiller.toml` reference + precedence
 - `docs/skills.md`: skills + propagation + Claude plugins/commands/agents sync
-- `docs/agents.md`: supported agents + default paths
 - `docs/mcp.md`: MCP server config + propagation
 - `docs/troubleshooting.md`: common failures + fixes
 - `docs/development.md`: dev workflow
