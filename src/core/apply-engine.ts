@@ -884,9 +884,15 @@ async function applyStandardMcpConfiguration(
   if (dryRun) {
     logVerbose(`DRY RUN: Would apply MCP config to: ${dest}`, verbose);
   } else {
-    // Transform MCP config for agent-specific compatibility
+    // Transform MCP config for compatibility.
+    //
+    // `.mcp.json` is shared (Claude Code + others). Keep it Claude-compatible
+    // so later agents don't overwrite `http|sse` back to legacy `remote`.
     let mcpToMerge = filteredMcpJson;
-    if (agent.getIdentifier() === 'claude') {
+    if (
+      agent.getIdentifier() === 'claude' ||
+      path.basename(dest) === '.mcp.json'
+    ) {
       mcpToMerge = transformMcpForClaude(filteredMcpJson);
     } else if (agent.getIdentifier() === 'kilocode') {
       mcpToMerge = transformMcpForKiloCode(filteredMcpJson);

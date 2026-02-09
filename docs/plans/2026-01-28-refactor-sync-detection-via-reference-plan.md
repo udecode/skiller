@@ -9,6 +9,7 @@ date: 2026-01-28
 ## Overview
 
 Two changes:
+
 1. Replace `synced: true` frontmatter flag with content-based detection - if body is just `@reference`, the referenced file is source of truth
 2. Move `.mdc` files from `.claude/skills/name.mdc` to `.claude/skills/name/name.mdc` (sibling to SKILL.md)
 
@@ -17,6 +18,7 @@ This restores compatibility with the pre-0.7 pattern and creates a cleaner file 
 ## Problem Statement
 
 Current approach:
+
 - Uses `synced: true` in frontmatter - extra metadata that can get out of sync
 - Places `.mdc` at skills root (`.claude/skills/name.mdc`) - scattered files
 
@@ -46,12 +48,15 @@ Current approach:
 /**
  * Check if SKILL.md body is just a reference (single line starting with @).
  */
-function isReferenceBody(body: string): { isReference: boolean; referencePath?: string } {
-  const lines = body.split('\n').filter(line => line.trim().length > 0);
+function isReferenceBody(body: string): {
+  isReference: boolean;
+  referencePath?: string;
+} {
+  const lines = body.split('\n').filter((line) => line.trim().length > 0);
   if (lines.length === 1 && lines[0].trim().startsWith('@')) {
     return {
       isReference: true,
-      referencePath: lines[0].trim().slice(1) // Remove @ prefix
+      referencePath: lines[0].trim().slice(1), // Remove @ prefix
     };
   }
   return { isReference: false };
@@ -117,7 +122,7 @@ description: My skill description
 ---
 
 # My Skill Content
-`
+`,
   );
 
   // Create SKILL.md with @reference (pre-0.7 pattern)
@@ -129,7 +134,7 @@ description: My skill description
 ---
 
 @.claude/rules/my-skill.mdc
-`
+`,
   );
 
   const result = await syncMdcToSkillMd(skillsDir, false, false);
@@ -156,7 +161,7 @@ description: My skill
 ---
 
 # Skill Content
-`
+`,
   );
 
   const result = await syncMdcToSkillMd(skillsDir, false, false);
@@ -166,7 +171,7 @@ description: My skill
   // Verify SKILL.md was created with @reference
   const skillMd = await fs.readFile(
     path.join(skillFolder, SKILL_MD_FILENAME),
-    'utf8'
+    'utf8',
   );
   expect(skillMd).toContain('@./my-skill.mdc');
 });
