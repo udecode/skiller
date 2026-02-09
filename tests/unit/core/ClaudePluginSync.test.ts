@@ -95,11 +95,7 @@ Do something with $FOO.
     );
 
     // Plugin agent (converted to skill)
-    const pluginAgentsDir = path.join(
-      pluginInstallPath,
-      'agents',
-      'research',
-    );
+    const pluginAgentsDir = path.join(pluginInstallPath, 'agents', 'research');
     await fs.mkdir(pluginAgentsDir, { recursive: true });
     await fs.writeFile(
       path.join(pluginAgentsDir, 'framework-docs-researcher.md'),
@@ -183,7 +179,9 @@ Find docs and summarize.
     );
     const parsedAgent = parseFrontmatter(installedAgentMd);
     expect(parsedAgent.rawFrontmatter?.name).toBe(agentName);
-    expect(parsedAgent.rawFrontmatter?.description).toBe('Research framework docs');
+    expect(parsedAgent.rawFrontmatter?.description).toBe(
+      'Research framework docs',
+    );
     expect(parsedAgent.rawFrontmatter?.model).toBe('inherit');
     expect(parsedAgent.body).toContain('Find docs and summarize.');
 
@@ -301,7 +299,7 @@ Local content.
     // Plugin command is installed under a namespaced folder instead
     const pluginDir = path.join(
       targetSkillsDir,
-      'testplugin_testmarket__do-thing',
+      'testplugin_testmarket-do-thing',
     );
     await expect(
       fs.access(path.join(pluginDir, 'SKILL.md')),
@@ -311,7 +309,7 @@ Local content.
       'utf8',
     );
     expect(parseFrontmatter(pluginSkillMd).rawFrontmatter?.name).toBe(
-      'testplugin_testmarket__do-thing',
+      'testplugin_testmarket-do-thing',
     );
   });
 

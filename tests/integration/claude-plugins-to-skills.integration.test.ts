@@ -50,6 +50,27 @@ Do something.
 `,
     );
 
+    // Plugin agent
+    await fs.mkdir(path.join(pluginInstallPath, 'agents', 'research'), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(
+        pluginInstallPath,
+        'agents',
+        'research',
+        'framework-docs-researcher.md',
+      ),
+      `---
+name: framework-docs-researcher
+description: Research framework docs
+model: inherit
+---
+
+Find docs and summarize.
+`,
+    );
+
     // Write installed_plugins.json for this project
     const indexPath = path.join(
       tmpHome,
@@ -125,6 +146,16 @@ Do something.
 
     await expect(
       fs.access(path.join(expectedSkillDir, 'SKILL.md')),
+    ).resolves.toBeUndefined();
+
+    const expectedAgentDir = path.join(
+      projectRoot,
+      '.codex',
+      'skills',
+      'framework-docs-researcher',
+    );
+    await expect(
+      fs.access(path.join(expectedAgentDir, 'SKILL.md')),
     ).resolves.toBeUndefined();
   });
 });

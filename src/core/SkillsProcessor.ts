@@ -770,6 +770,20 @@ export async function propagateSkills(
     }
   }
 
+  // Sync project Claude commands + agents as skills into agent skills dirs.
+  // This intentionally does NOT write into the committed .claude/skills source-of-truth.
+  if (destinationPaths.size > 0) {
+    const { syncClaudeProjectCommandsAndAgentsToSkillsDirs } = await import(
+      './ClaudeProjectSync'
+    );
+    await syncClaudeProjectCommandsAndAgentsToSkillsDirs({
+      projectRoot,
+      targetSkillsDirs: [...destinationPaths],
+      verbose,
+      dryRun,
+    });
+  }
+
   // Sync Claude plugins (skills + commands converted to skills) into agent skills dirs.
   // This intentionally does NOT write into the committed .claude/skills source-of-truth.
   if (destinationPaths.size > 0) {

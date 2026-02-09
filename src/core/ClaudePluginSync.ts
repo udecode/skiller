@@ -38,7 +38,7 @@ interface PluginResolvedInstall {
 interface LegacyMarkerFile {
   pluginId: string;
   pluginVersion?: string;
-  sourceKind: 'skill' | 'command';
+  sourceKind: 'skill' | 'command' | 'agent';
   sourceRelPath: string;
   generatedName: string;
 }
@@ -46,7 +46,7 @@ interface LegacyMarkerFile {
 interface ManagedEntry {
   pluginId: string;
   pluginVersion?: string;
-  sourceKind: 'skill' | 'command';
+  sourceKind: 'skill' | 'command' | 'agent';
   sourceRelPath: string;
   destRelPath: string;
 }
@@ -60,7 +60,7 @@ interface ExpectedPluginItem {
   itemKey: string;
   pluginId: string;
   pluginVersion?: string;
-  kind: 'skill' | 'command';
+  kind: 'skill' | 'command' | 'agent';
   sourcePath: string;
   sourceRelPath: string;
   baseName: string;
@@ -96,7 +96,7 @@ async function fileExists(p: string): Promise<boolean> {
 
 function makeItemKey(
   pluginId: string,
-  sourceKind: 'skill' | 'command',
+  sourceKind: 'skill' | 'command' | 'agent',
   sourceRelPath: string,
 ): string {
   return `${pluginId}::${sourceKind}::${sourceRelPath}`;
@@ -278,6 +278,55 @@ export async function discoverPluginCommandFiles(
     }));
 }
 
+export async function discoverPluginAgentFiles(
+  installPath: string,
+): Promise<Array<{ name: string; file: string; rel: string }>> {
+  const agentsRoot = path.join(installPath, 'agents');
+  if (!(await fileExists(agentsRoot))) return [];
+
+  const results: Array<{ name: string; file: string; rel: string }> = [];
+
+  async function walk(current: string, depth: number): Promise<void> {
+    if (depth >= MAX_RECURSION_DEPTH) return;
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+
+      let content: string;
+      try {
+        content = await fs.readFile(full, 'utf8');
+      } catch {
+        continue;
+      }
+
+      const parsed = parseFrontmatter(content);
+      const fmName =
+        parsed.rawFrontmatter && typeof parsed.rawFrontmatter.name === 'string'
+          ? parsed.rawFrontmatter.name
+          : parsed.frontmatter?.name;
+      if (typeof fmName !== 'string' || fmName.trim() === '') continue;
+
+      const rel = path.relative(agentsRoot, full).replace(/\\/g, '/');
+      results.push({ name: fmName.trim(), file: full, rel });
+    }
+  }
+
+  await walk(agentsRoot, 0);
+  return results;
+}
+
 function generateBaseNameFromRelId(relId: string): string {
   const normalized = relId.replace(/\\/g, '/');
   const segments = normalized.split('/').filter(Boolean);
@@ -289,7 +338,7 @@ function generateBaseNameFromCommand(commandName: string): string {
 }
 
 function generateNamespacedName(pluginId: string, baseName: string): string {
-  return `${sanitizeId(pluginId)}__${baseName}`;
+  return `${sanitizeId(pluginId)}-${baseName}`;
 }
 
 async function readManifestFile(
@@ -309,7 +358,12 @@ async function readManifestFile(
       const e = entry as Record<string, unknown>;
       if (typeof e.pluginId !== 'string') continue;
       const sourceKind = e.sourceKind;
-      if (sourceKind !== 'skill' && sourceKind !== 'command') continue;
+      if (
+        sourceKind !== 'skill' &&
+        sourceKind !== 'command' &&
+        sourceKind !== 'agent'
+      )
+        continue;
       if (typeof e.sourceRelPath !== 'string') continue;
       if (typeof e.destRelPath !== 'string') continue;
       const pluginVersion =
@@ -373,7 +427,12 @@ async function readLegacyMarkerFile(
     const obj = raw as Record<string, unknown>;
     if (typeof obj.pluginId !== 'string') return null;
     if (typeof obj.generatedName !== 'string') return null;
-    if (obj.sourceKind !== 'skill' && obj.sourceKind !== 'command') return null;
+    if (
+      obj.sourceKind !== 'skill' &&
+      obj.sourceKind !== 'command' &&
+      obj.sourceKind !== 'agent'
+    )
+      return null;
     if (typeof obj.sourceRelPath !== 'string') return null;
     const pluginVersion =
       typeof obj.pluginVersion === 'string' ? obj.pluginVersion : undefined;
@@ -485,6 +544,87 @@ async function discoverLocalSkillNames(
   return names;
 }
 
+async function discoverLocalCommandNames(
+  projectRoot: string,
+): Promise<Set<string>> {
+  const localCommandsDir = path.join(projectRoot, '.claude', 'commands');
+  if (!(await fileExists(localCommandsDir))) return new Set();
+
+  const names = new Set<string>();
+
+  async function walk(current: string, depth: number): Promise<void> {
+    if (depth >= MAX_RECURSION_DEPTH) return;
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+      names.add(sanitizeId(path.basename(entry.name, '.md')));
+    }
+  }
+
+  await walk(localCommandsDir, 0);
+  return names;
+}
+
+async function discoverLocalAgentNames(
+  projectRoot: string,
+): Promise<Set<string>> {
+  const localAgentsDir = path.join(projectRoot, '.claude', 'agents');
+  if (!(await fileExists(localAgentsDir))) return new Set();
+
+  const names = new Set<string>();
+
+  async function walk(current: string, depth: number): Promise<void> {
+    if (depth >= MAX_RECURSION_DEPTH) return;
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+
+      let content: string;
+      try {
+        content = await fs.readFile(full, 'utf8');
+      } catch {
+        continue;
+      }
+
+      const parsed = parseFrontmatter(content);
+      const fmName =
+        parsed.rawFrontmatter && typeof parsed.rawFrontmatter.name === 'string'
+          ? parsed.rawFrontmatter.name
+          : parsed.frontmatter?.name;
+      if (typeof fmName !== 'string' || fmName.trim() === '') continue;
+
+      names.add(sanitizeId(fmName.trim()));
+    }
+  }
+
+  await walk(localAgentsDir, 0);
+  return names;
+}
+
 async function ensureDir(dir: string, dryRun: boolean): Promise<void> {
   if (dryRun) return;
   await fs.mkdir(dir, { recursive: true });
@@ -525,14 +665,15 @@ async function rewriteSkillMdName(
   await fs.writeFile(skillMdPath, next, 'utf8');
 }
 
-async function writeCommandAsSkill(
-  srcCommandPath: string,
+async function writeMarkdownAsSkill(
+  srcMarkdownPath: string,
   destDir: string,
   generatedName: string,
   pluginId: string,
+  kindLabel: string,
   dryRun: boolean,
 ): Promise<void> {
-  const content = await fs.readFile(srcCommandPath, 'utf8');
+  const content = await fs.readFile(srcMarkdownPath, 'utf8');
   const { rawFrontmatter, body } = parseFrontmatter(content);
   const fm: Record<string, unknown> = rawFrontmatter
     ? { ...rawFrontmatter }
@@ -540,7 +681,7 @@ async function writeCommandAsSkill(
 
   fm.name = generatedName;
   if (typeof fm.description !== 'string' || fm.description.trim() === '') {
-    fm.description = `Command from ${pluginId}: ${path.basename(srcCommandPath, '.md')}`;
+    fm.description = `${kindLabel} from ${pluginId}: ${path.basename(srcMarkdownPath, '.md')}`;
   }
 
   const next = `---\n${yaml
@@ -566,6 +707,13 @@ export async function syncClaudePluginsToSkillsDirs(
   const index = await readInstalledPluginsIndex(claudeDir);
 
   const localSkillNames = await discoverLocalSkillNames(projectRoot);
+  const localCommandNames = await discoverLocalCommandNames(projectRoot);
+  const localAgentNames = await discoverLocalAgentNames(projectRoot);
+  const localReservedNames = new Set<string>([
+    ...localSkillNames,
+    ...localCommandNames,
+    ...localAgentNames,
+  ]);
 
   // If we can't read the installed plugins index, we can't install/update
   // anything, but we can still clean up managed folders for plugins that
@@ -578,7 +726,7 @@ export async function syncClaudePluginsToSkillsDirs(
       const nextEntries: ManagedEntry[] = [];
 
       // Build reserved set (local skills always win).
-      const reserved = new Set<string>(localSkillNames);
+      const reserved = new Set<string>(localReservedNames);
 
       // Also reserve any existing non-managed directories.
       const managedDest = new Set<string>(
@@ -670,6 +818,21 @@ export async function syncClaudePluginsToSkillsDirs(
         baseName,
       });
     }
+
+    const agentFiles = await discoverPluginAgentFiles(plugin.installPath);
+    for (const a of agentFiles) {
+      const baseName = sanitizeId(a.name);
+      const sourceRelPath = `agents/${a.rel}`;
+      expectedItems.push({
+        itemKey: makeItemKey(plugin.pluginId, 'agent', sourceRelPath),
+        pluginId: plugin.pluginId,
+        pluginVersion: plugin.version,
+        kind: 'agent',
+        sourcePath: a.file,
+        sourceRelPath,
+        baseName,
+      });
+    }
   }
 
   const sortedItems = [...expectedItems].sort((a, b) => {
@@ -701,7 +864,7 @@ export async function syncClaudePluginsToSkillsDirs(
     );
 
     // Reserve: local skills always win. Also reserve any existing non-managed folders.
-    const reserved = new Set<string>(localSkillNames);
+    const reserved = new Set<string>(localReservedNames);
 
     if (targetExists) {
       let dirents: Dirent[] = [];
@@ -726,6 +889,10 @@ export async function syncClaudePluginsToSkillsDirs(
     for (const item of sortedItems) {
       const prev = prevDestByItemKey.get(item.itemKey);
       if (!prev) continue;
+      // Migration: previous versions used `${pluginId}__${name}`.
+      // Don't preserve legacy namespaced destinations so we can rename to the
+      // new `${pluginId}-${name}` format.
+      if (prev.startsWith(`${sanitizeId(item.pluginId)}__`)) continue;
       if (taken.has(prev)) continue;
       assignedDestByItemKey.set(item.itemKey, prev);
       taken.add(prev);
@@ -746,7 +913,7 @@ export async function syncClaudePluginsToSkillsDirs(
       let candidate = namespacedBase;
       let i = 2;
       while (taken.has(candidate)) {
-        candidate = `${namespacedBase}__${i++}`;
+        candidate = `${namespacedBase}-${i++}`;
       }
       assignedDestByItemKey.set(item.itemKey, candidate);
       taken.add(candidate);
@@ -810,20 +977,22 @@ export async function syncClaudePluginsToSkillsDirs(
         // Remove any leftover legacy marker file from older versions.
         await removeLegacyMarkerFile(destDir, dryRun);
       } else {
+        const kindLabel = item.kind === 'command' ? 'command' : 'agent';
         logVerboseInfo(
           dryRun
-            ? `DRY RUN: Would install plugin command '${destRelPath}' as skill to ${targetSkillsDir}`
-            : `Installing plugin command '${destRelPath}' as skill to ${targetSkillsDir}`,
+            ? `DRY RUN: Would install plugin ${kindLabel} '${destRelPath}' as skill to ${targetSkillsDir}`
+            : `Installing plugin ${kindLabel} '${destRelPath}' as skill to ${targetSkillsDir}`,
           verbose,
           dryRun,
         );
         await ensureDir(destDir, dryRun);
         if (!dryRun) {
-          await writeCommandAsSkill(
+          await writeMarkdownAsSkill(
             item.sourcePath,
             destDir,
             destRelPath,
             item.pluginId,
+            item.kind === 'command' ? 'Command' : 'Agent',
             dryRun,
           );
         }

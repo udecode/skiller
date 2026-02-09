@@ -22,7 +22,9 @@ describe('Claude Project Commands/Agents → Skills Sync', () => {
 
   it('syncs project .claude/commands + .claude/agents as skills into target skills dirs and cleans up when removed', async () => {
     const projectClaudeDir = path.join(tmpDir, '.claude');
-    await fs.mkdir(path.join(projectClaudeDir, 'commands'), { recursive: true });
+    await fs.mkdir(path.join(projectClaudeDir, 'commands'), {
+      recursive: true,
+    });
     await fs.mkdir(path.join(projectClaudeDir, 'agents'), { recursive: true });
 
     await fs.writeFile(
@@ -107,7 +109,9 @@ Find docs and summarize.
 
   it('namespaces project items only when they conflict with an existing (manual) skill', async () => {
     const projectClaudeDir = path.join(tmpDir, '.claude');
-    await fs.mkdir(path.join(projectClaudeDir, 'commands'), { recursive: true });
+    await fs.mkdir(path.join(projectClaudeDir, 'commands'), {
+      recursive: true,
+    });
 
     await fs.writeFile(
       path.join(projectClaudeDir, 'commands', 'do-thing.md'),
@@ -147,11 +151,14 @@ Manual content.
     });
 
     // Manual skill remains unchanged
-    const manualSkillMd = await fs.readFile(path.join(manualDir, 'SKILL.md'), 'utf8');
+    const manualSkillMd = await fs.readFile(
+      path.join(manualDir, 'SKILL.md'),
+      'utf8',
+    );
     expect(parseFrontmatter(manualSkillMd).body).toContain('Manual content.');
 
     // Project command is installed under a namespaced folder instead
-    const projectDir = path.join(targetSkillsDir, 'claude__do-thing');
+    const projectDir = path.join(targetSkillsDir, 'claude-do-thing');
     await expect(
       fs.access(path.join(projectDir, 'SKILL.md')),
     ).resolves.toBeUndefined();
@@ -160,7 +167,7 @@ Manual content.
       'utf8',
     );
     expect(parseFrontmatter(projectSkillMd).rawFrontmatter?.name).toBe(
-      'claude__do-thing',
+      'claude-do-thing',
     );
   });
 
@@ -170,7 +177,9 @@ Manual content.
     await fs.mkdir(pluginInstallPath, { recursive: true });
 
     // Plugin command (converted to skill)
-    await fs.mkdir(path.join(pluginInstallPath, 'commands'), { recursive: true });
+    await fs.mkdir(path.join(pluginInstallPath, 'commands'), {
+      recursive: true,
+    });
     await fs.writeFile(
       path.join(pluginInstallPath, 'commands', 'do-thing.md'),
       `---
@@ -258,7 +267,9 @@ From plugin.
     expect(parseFrontmatter(firstInstalled).body).toContain('From plugin.');
 
     // Add project command with same name; should take over do-thing
-    await fs.mkdir(path.join(projectClaudeDir, 'commands'), { recursive: true });
+    await fs.mkdir(path.join(projectClaudeDir, 'commands'), {
+      recursive: true,
+    });
     await fs.writeFile(
       path.join(projectClaudeDir, 'commands', 'do-thing.md'),
       `---
@@ -291,9 +302,12 @@ From project.
 
     await expect(
       fs.access(
-        path.join(targetSkillsDir, 'testplugin_testmarket__do-thing', 'SKILL.md'),
+        path.join(
+          targetSkillsDir,
+          'testplugin_testmarket-do-thing',
+          'SKILL.md',
+        ),
       ),
     ).resolves.toBeUndefined();
   });
 });
-
