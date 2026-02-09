@@ -14,6 +14,131 @@ import { parseFrontmatter } from './FrontmatterParser';
 import type { IAgent } from '../agents/IAgent';
 
 /**
+ * For non-Claude agents, compile a wrapper SKILL.md (body is a single @reference)
+ * into a standalone SKILL.md with the referenced file's body inlined.
+ *
+ * We intentionally keep this conservative: only expand when the body is *just*
+ * an @reference line, to avoid accidentally treating email addresses or
+ * "@mentions" inside real content as file references.
+ */
+async function compileSkillMdForNonClaudeAgents(
+  skillMdContent: string,
+  projectRoot: string,
+  skillFolderPath: string,
+): Promise<string> {
+  const { frontmatter, rawFrontmatter, body } =
+    parseFrontmatter(skillMdContent);
+  const refCheck = isReferenceBody(body);
+
+  if (!refCheck.isReference || !refCheck.referencePath) {
+    return skillMdContent;
+  }
+
+  const referencePath = refCheck.referencePath;
+  const absoluteRefPath =
+    referencePath.startsWith('./') || referencePath.startsWith('../')
+      ? path.resolve(skillFolderPath, referencePath)
+      : path.resolve(projectRoot, referencePath);
+
+  // Security: only inline references within the project root.
+  const normalizedProjectRoot = path.resolve(projectRoot);
+  const normalizedAbsoluteRefPath = path.resolve(absoluteRefPath);
+  if (!normalizedAbsoluteRefPath.startsWith(normalizedProjectRoot + path.sep)) {
+    return skillMdContent;
+  }
+
+  let referencedContent: string;
+  try {
+    referencedContent = await fs.readFile(normalizedAbsoluteRefPath, 'utf8');
+  } catch {
+    return skillMdContent;
+  }
+
+  const { body: referencedBody } = parseFrontmatter(referencedContent);
+
+  const fmData =
+    rawFrontmatter && Object.keys(rawFrontmatter).length > 0
+      ? rawFrontmatter
+      : frontmatter && Object.keys(frontmatter).length > 0
+        ? frontmatter
+        : null;
+
+  if (fmData) {
+    return `---
+${yaml.dump(fmData, { lineWidth: -1, noRefs: true }).trim()}
+---
+
+${referencedBody}
+`;
+  }
+
+  return `${referencedBody}\n`;
+}
+
+/**
+ * Copies a single skill directory to an agent skill directory:
+ * - SKILL.md is compiled (inlines @reference wrapper content)
+ * - .mdc files are excluded (Claude-only sources)
+ * - all other files are copied as-is
+ */
+async function copySkillDirectoryForNonClaudeAgents(
+  src: string,
+  dest: string,
+  projectRoot: string,
+  skillFolderPath: string,
+  depth: number = 0,
+): Promise<void> {
+  // Security: Prevent DoS via deeply nested directories
+  if (depth >= MAX_RECURSION_DEPTH) {
+    return;
+  }
+
+  const stat = await fs.stat(src);
+
+  if (stat.isDirectory()) {
+    await fs.mkdir(dest, { recursive: true });
+    const entries = await fs.readdir(src, { withFileTypes: true });
+
+    for (const entry of entries) {
+      // Exclude all .mdc files from agent skills directories.
+      if (entry.isFile() && entry.name.endsWith('.mdc')) {
+        continue;
+      }
+
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      await copySkillDirectoryForNonClaudeAgents(
+        srcPath,
+        destPath,
+        projectRoot,
+        skillFolderPath,
+        depth + 1,
+      );
+    }
+    return;
+  }
+
+  // Files
+  if (path.basename(src) === SKILL_MD_FILENAME) {
+    const content = await fs.readFile(src, 'utf8');
+    const compiled = await compileSkillMdForNonClaudeAgents(
+      content,
+      projectRoot,
+      skillFolderPath,
+    );
+    await fs.writeFile(dest, compiled, 'utf8');
+    return;
+  }
+
+  // Extra guard: skip .mdc even if reached via recursion.
+  if (src.endsWith('.mdc')) {
+    return;
+  }
+
+  await fs.copyFile(src, dest);
+}
+
+/**
  * Check if SKILL.md body is just a reference (single non-empty line starting with @).
  * This replaces the previous synced: true frontmatter detection.
  */
@@ -281,7 +406,9 @@ ${yaml.dump(skillFrontmatter || { name: skillName }, { lineWidth: -1, noRefs: tr
             if (refCheck.referencePath?.includes('/rules/')) {
               const refFileName = path.basename(refCheck.referencePath);
               const refBaseName = path.basename(refFileName, '.mdc');
-              candidatePaths.push(path.join(skillsDir, refBaseName, refFileName));
+              candidatePaths.push(
+                path.join(skillsDir, refBaseName, refFileName),
+              );
             }
 
             let referencedContent: string | null = null;
@@ -444,6 +571,7 @@ export async function discoverSkills(
 export async function copySkillsToAgent(
   sourceSkillsDir: string,
   targetSkillsDir: string,
+  projectRoot: string,
   verbose: boolean,
   dryRun: boolean,
 ): Promise<{ copied: number; warnings: string[] }> {
@@ -481,7 +609,12 @@ export async function copySkillsToAgent(
     const targetSkillPath = path.join(targetSkillsDir, relativeSkillPath);
 
     if (!dryRun) {
-      await copySkillsDirectory(skillPath, targetSkillPath);
+      await copySkillDirectoryForNonClaudeAgents(
+        skillPath,
+        targetSkillPath,
+        projectRoot,
+        skillPath,
+      );
     }
 
     logVerboseInfo(
@@ -619,6 +752,7 @@ export async function propagateSkills(
     const result = await copySkillsToAgent(
       skillsDir,
       targetPath,
+      projectRoot,
       verbose,
       dryRun,
     );
