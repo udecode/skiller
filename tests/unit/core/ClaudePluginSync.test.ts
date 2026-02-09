@@ -143,7 +143,7 @@ Find docs and summarize.
     const skillName = `a-skill`;
     const cmdName = `do-thing`;
     const agentName = `framework-docs-researcher`;
-    const manifestPath = path.join(targetSkillsDir, '.skiller-plugins.json');
+    const manifestPath = path.join(targetSkillsDir, '.skiller.json');
 
     // Skill copied + name set
     const installedSkillMd = await fs.readFile(

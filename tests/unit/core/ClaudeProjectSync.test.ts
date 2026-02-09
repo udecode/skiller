@@ -86,7 +86,7 @@ Find docs and summarize.
     expect(parsedAgent.body).toContain('Find docs and summarize.');
 
     await expect(
-      fs.access(path.join(targetSkillsDir, '.skiller-claude.json')),
+      fs.access(path.join(targetSkillsDir, '.skiller.json')),
     ).resolves.toBeUndefined();
 
     // Remove command and re-sync: should cleanup managed folder

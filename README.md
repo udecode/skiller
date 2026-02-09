@@ -62,7 +62,7 @@ A Claude-centric fork of [ruler](https://github.com/intellectronica/ruler) with 
 - Syncs enabled plugin `agents/**/*.md` as skills (`SKILL.md`) into agent skills directories
 - Uses the skill/command/agent name by default (matches existing Codex skill names)
 - If a name conflicts, local skills win and the plugin skill is namespaced as `<pluginId>-<name>`
-- Tracks plugin-managed skills in a single `.skiller-plugins.json` file per agent skills directory
+- Tracks plugin-managed skills in a single `.skiller.json` file per agent skills directory
 - Removes stale plugin skills when plugins are disabled
 
 ## 10. Claude Commands/Agents → Skills
@@ -72,7 +72,7 @@ A Claude-centric fork of [ruler](https://github.com/intellectronica/ruler) with 
 - Uses the command/agent name by default
 - If a name conflicts, existing local/manual skills win and the project item is namespaced as `claude-<name>`
 - Project items win over plugin skills/commands/agents on name conflicts
-- Tracks project-managed items in a single `.skiller-claude.json` file per agent skills directory
+- Tracks project-managed items in a single `.skiller.json` file per agent skills directory
 
 ---
 
@@ -607,7 +607,7 @@ If your project enables Claude Code plugins in `.claude/settings.json`, Skiller 
 - Plugin `commands/*.md` are converted into skills (`SKILL.md`)
 - Plugin skills use their original skill/command name by default
 - If a name conflicts, local skills win and the plugin skill is namespaced as `<pluginId>-<name>`
-- Plugin-managed skills are tracked via `.skiller-plugins.json` in each agent skills directory
+- Plugin-managed skills are tracked via `.skiller.json` in each agent skills directory
 
 ### Skills Directory Structure
 

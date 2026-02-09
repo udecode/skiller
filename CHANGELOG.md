@@ -12,7 +12,7 @@
 - Syncs enabled plugin `agents/**/*.md` as skills (`SKILL.md`) into agent skills directories
 - Uses the skill/command/agent name by default
 - If a name conflicts, local skills win and the plugin skill is namespaced as `<pluginId>-<name>`
-- Tracks plugin-managed skills via `.skiller-plugins.json` in each agent skills directory
+- Tracks plugin-managed skills via `.skiller.json` in each agent skills directory
 - Removes stale plugin skills when plugins are disabled
 
 **Claude Commands/Agents → Skills:**
@@ -22,7 +22,7 @@
 - Uses the command/agent name by default
 - If a name conflicts, existing local/manual skills win and the project item is namespaced as `claude-<name>`
 - Project items win over plugin skills/commands/agents on name conflicts
-- Tracks project-managed items via `.skiller-claude.json` in each agent skills directory
+- Tracks project-managed items via `.skiller.json` in each agent skills directory
 
 ## 0.7.11
 

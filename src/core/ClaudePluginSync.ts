@@ -6,6 +6,13 @@ import * as yaml from 'js-yaml';
 import { MAX_RECURSION_DEPTH, logVerboseInfo, logWarn } from '../constants';
 import { parseFrontmatter } from './FrontmatterParser';
 import { copySkillsDirectory } from './SkillsUtils';
+import {
+  isPluginManifestEntry,
+  loadSkillsManifestEntries,
+  type PluginSkillsManifestEntry,
+  type SkillsManifestEntry,
+  writeSkillsManifestEntries,
+} from './SkillsManifest';
 
 export interface InstalledPluginEntry {
   scope: 'project' | 'user';
@@ -43,19 +50,6 @@ interface LegacyMarkerFile {
   generatedName: string;
 }
 
-interface ManagedEntry {
-  pluginId: string;
-  pluginVersion?: string;
-  sourceKind: 'skill' | 'command' | 'agent';
-  sourceRelPath: string;
-  destRelPath: string;
-}
-
-interface ManifestFile {
-  version: number;
-  entries: ManagedEntry[];
-}
-
 interface ExpectedPluginItem {
   itemKey: string;
   pluginId: string;
@@ -67,8 +61,7 @@ interface ExpectedPluginItem {
 }
 
 const LEGACY_MARKER_FILENAME = '.skiller-plugin.json';
-const MANIFEST_FILENAME = '.skiller-plugins.json';
-const MANIFEST_VERSION = 1;
+type ManagedEntry = PluginSkillsManifestEntry;
 
 function getUserHomeDir(): string {
   // Prefer env vars so tests (and users) can override deterministically.
@@ -341,82 +334,6 @@ function generateNamespacedName(pluginId: string, baseName: string): string {
   return `${sanitizeId(pluginId)}-${baseName}`;
 }
 
-async function readManifestFile(
-  targetSkillsDir: string,
-): Promise<ManifestFile | null> {
-  const manifestPath = path.join(targetSkillsDir, MANIFEST_FILENAME);
-  try {
-    const raw = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as unknown;
-    if (!raw || typeof raw !== 'object') return null;
-    const obj = raw as Record<string, unknown>;
-    if (typeof obj.version !== 'number') return null;
-    if (!Array.isArray(obj.entries)) return null;
-
-    const entries: ManagedEntry[] = [];
-    for (const entry of obj.entries as unknown[]) {
-      if (!entry || typeof entry !== 'object') continue;
-      const e = entry as Record<string, unknown>;
-      if (typeof e.pluginId !== 'string') continue;
-      const sourceKind = e.sourceKind;
-      if (
-        sourceKind !== 'skill' &&
-        sourceKind !== 'command' &&
-        sourceKind !== 'agent'
-      )
-        continue;
-      if (typeof e.sourceRelPath !== 'string') continue;
-      if (typeof e.destRelPath !== 'string') continue;
-      const pluginVersion =
-        typeof e.pluginVersion === 'string' ? e.pluginVersion : undefined;
-      entries.push({
-        pluginId: e.pluginId,
-        pluginVersion,
-        sourceKind,
-        sourceRelPath: e.sourceRelPath,
-        destRelPath: e.destRelPath,
-      });
-    }
-
-    return {
-      version: obj.version as number,
-      entries,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function writeManifestFile(
-  targetSkillsDir: string,
-  entries: ManagedEntry[],
-  dryRun: boolean,
-): Promise<void> {
-  const manifestPath = path.join(targetSkillsDir, MANIFEST_FILENAME);
-
-  if (entries.length === 0) {
-    if (dryRun) return;
-    try {
-      await fs.unlink(manifestPath);
-    } catch {
-      // ignore
-    }
-    return;
-  }
-
-  const manifest: ManifestFile = {
-    version: MANIFEST_VERSION,
-    entries: [...entries].sort((a, b) => {
-      // Stable ordering for diffs.
-      const ak = `${a.destRelPath}::${a.pluginId}::${a.sourceKind}::${a.sourceRelPath}`;
-      const bk = `${b.destRelPath}::${b.pluginId}::${b.sourceKind}::${b.sourceRelPath}`;
-      return ak.localeCompare(bk);
-    }),
-  };
-
-  if (dryRun) return;
-  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-}
-
 async function readLegacyMarkerFile(
   dir: string,
 ): Promise<LegacyMarkerFile | null> {
@@ -464,11 +381,21 @@ async function removeLegacyMarkerFile(
 async function loadManagedEntries(
   targetSkillsDir: string,
   dryRun: boolean,
-): Promise<ManagedEntry[]> {
-  const manifest = await readManifestFile(targetSkillsDir);
-  const entries: ManagedEntry[] = manifest?.entries
-    ? [...manifest.entries]
-    : [];
+): Promise<{
+  pluginEntries: ManagedEntry[];
+  otherEntries: SkillsManifestEntry[];
+}> {
+  const allEntries = await loadSkillsManifestEntries(targetSkillsDir);
+  const pluginEntries: ManagedEntry[] = [];
+  const otherEntries: SkillsManifestEntry[] = [];
+
+  for (const entry of allEntries) {
+    if (isPluginManifestEntry(entry)) {
+      pluginEntries.push(entry);
+    } else {
+      otherEntries.push(entry);
+    }
+  }
 
   // Migration: absorb legacy per-skill markers and remove them so they don't
   // show up in every skill folder.
@@ -476,7 +403,7 @@ async function loadManagedEntries(
   try {
     dirents = await fs.readdir(targetSkillsDir, { withFileTypes: true });
   } catch {
-    return entries;
+    return { pluginEntries, otherEntries };
   }
 
   for (const dirent of dirents) {
@@ -486,6 +413,7 @@ async function loadManagedEntries(
     if (!legacy) continue;
 
     const managed: ManagedEntry = {
+      sourceType: 'plugin',
       pluginId: legacy.pluginId,
       pluginVersion: legacy.pluginVersion,
       sourceKind: legacy.sourceKind,
@@ -493,7 +421,7 @@ async function loadManagedEntries(
       destRelPath: dirent.name,
     };
 
-    const already = entries.some(
+    const already = pluginEntries.some(
       (e) =>
         e.destRelPath === managed.destRelPath &&
         e.pluginId === managed.pluginId &&
@@ -501,13 +429,13 @@ async function loadManagedEntries(
         e.sourceRelPath === managed.sourceRelPath,
     );
     if (!already) {
-      entries.push(managed);
+      pluginEntries.push(managed);
     }
 
     await removeLegacyMarkerFile(folder, dryRun);
   }
 
-  return entries;
+  return { pluginEntries, otherEntries };
 }
 
 async function discoverLocalSkillNames(
@@ -722,7 +650,8 @@ export async function syncClaudePluginsToSkillsDirs(
     for (const targetSkillsDir of targetSkillsDirs) {
       if (!(await fileExists(targetSkillsDir))) continue;
 
-      const managedEntries = await loadManagedEntries(targetSkillsDir, dryRun);
+      const { pluginEntries: managedEntries, otherEntries } =
+        await loadManagedEntries(targetSkillsDir, dryRun);
       const nextEntries: ManagedEntry[] = [];
 
       // Build reserved set (local skills always win).
@@ -768,7 +697,11 @@ export async function syncClaudePluginsToSkillsDirs(
         nextEntries.push(entry);
       }
 
-      await writeManifestFile(targetSkillsDir, nextEntries, dryRun);
+      await writeSkillsManifestEntries(
+        targetSkillsDir,
+        [...otherEntries, ...nextEntries],
+        dryRun,
+      );
     }
     return;
   }
@@ -846,9 +779,13 @@ export async function syncClaudePluginsToSkillsDirs(
     const targetExists = await fileExists(targetSkillsDir);
     if (!targetExists && sortedItems.length === 0) continue;
 
-    const managedEntries = targetExists
-      ? await loadManagedEntries(targetSkillsDir, dryRun)
-      : [];
+    let managedEntries: ManagedEntry[] = [];
+    let otherEntries: SkillsManifestEntry[] = [];
+    if (targetExists) {
+      const loaded = await loadManagedEntries(targetSkillsDir, dryRun);
+      managedEntries = loaded.pluginEntries;
+      otherEntries = loaded.otherEntries;
+    }
 
     // Map previous destinations by itemKey for stability.
     const prevDestByItemKey = new Map<string, string>();
@@ -1054,6 +991,7 @@ export async function syncClaudePluginsToSkillsDirs(
     // Add expected entries for installed items
     for (const item of assignedItems) {
       nextEntries.push({
+        sourceType: 'plugin',
         pluginId: item.pluginId,
         pluginVersion: item.pluginVersion,
         sourceKind: item.kind,
@@ -1062,6 +1000,10 @@ export async function syncClaudePluginsToSkillsDirs(
       });
     }
 
-    await writeManifestFile(targetSkillsDir, nextEntries, dryRun);
+    await writeSkillsManifestEntries(
+      targetSkillsDir,
+      [...otherEntries, ...nextEntries],
+      dryRun,
+    );
   }
 }

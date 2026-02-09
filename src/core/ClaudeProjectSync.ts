@@ -4,23 +4,20 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { MAX_RECURSION_DEPTH, logVerboseInfo, logWarn } from '../constants';
 import { parseFrontmatter } from './FrontmatterParser';
+import {
+  isClaudeManifestEntry,
+  isPluginManifestEntry,
+  loadSkillsManifestEntries,
+  type ClaudeSkillsManifestEntry,
+  type SkillsManifestEntry,
+  writeSkillsManifestEntries,
+} from './SkillsManifest';
 
 export interface SyncClaudeProjectArgs {
   projectRoot: string;
   targetSkillsDirs: string[];
   verbose: boolean;
   dryRun: boolean;
-}
-
-interface ManagedEntry {
-  sourceKind: 'command' | 'agent';
-  sourceRelPath: string;
-  destRelPath: string;
-}
-
-interface ManifestFile {
-  version: number;
-  entries: ManagedEntry[];
 }
 
 interface ExpectedItem {
@@ -31,8 +28,7 @@ interface ExpectedItem {
   baseName: string;
 }
 
-const MANIFEST_FILENAME = '.skiller-claude.json';
-const MANIFEST_VERSION = 1;
+type ManagedEntry = ClaudeSkillsManifestEntry;
 const LEGACY_PLUGIN_MARKER_FILENAME = '.skiller-plugin.json';
 
 function sanitizeId(value: string): string {
@@ -148,70 +144,6 @@ async function discoverAgentFiles(
   return results;
 }
 
-async function readManifestFile(
-  targetSkillsDir: string,
-): Promise<ManifestFile | null> {
-  const manifestPath = path.join(targetSkillsDir, MANIFEST_FILENAME);
-  try {
-    const raw = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as unknown;
-    if (!raw || typeof raw !== 'object') return null;
-    const obj = raw as Record<string, unknown>;
-    if (typeof obj.version !== 'number') return null;
-    if (!Array.isArray(obj.entries)) return null;
-
-    const entries: ManagedEntry[] = [];
-    for (const entry of obj.entries as unknown[]) {
-      if (!entry || typeof entry !== 'object') continue;
-      const e = entry as Record<string, unknown>;
-      if (e.sourceKind !== 'command' && e.sourceKind !== 'agent') continue;
-      if (typeof e.sourceRelPath !== 'string') continue;
-      if (typeof e.destRelPath !== 'string') continue;
-      entries.push({
-        sourceKind: e.sourceKind,
-        sourceRelPath: e.sourceRelPath,
-        destRelPath: e.destRelPath,
-      });
-    }
-
-    return {
-      version: obj.version as number,
-      entries,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function writeManifestFile(
-  targetSkillsDir: string,
-  entries: ManagedEntry[],
-  dryRun: boolean,
-): Promise<void> {
-  const manifestPath = path.join(targetSkillsDir, MANIFEST_FILENAME);
-
-  if (entries.length === 0) {
-    if (dryRun) return;
-    try {
-      await fs.unlink(manifestPath);
-    } catch {
-      // ignore
-    }
-    return;
-  }
-
-  const manifest: ManifestFile = {
-    version: MANIFEST_VERSION,
-    entries: [...entries].sort((a, b) => {
-      const ak = `${a.destRelPath}::${a.sourceKind}::${a.sourceRelPath}`;
-      const bk = `${b.destRelPath}::${b.sourceKind}::${b.sourceRelPath}`;
-      return ak.localeCompare(bk);
-    }),
-  };
-
-  if (dryRun) return;
-  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-}
-
 async function ensureDir(dir: string, dryRun: boolean): Promise<void> {
   if (dryRun) return;
   await fs.mkdir(dir, { recursive: true });
@@ -251,25 +183,12 @@ async function writeMarkdownAsSkill(
 async function readPluginManagedDestNames(
   targetSkillsDir: string,
 ): Promise<Set<string>> {
-  const manifestPath = path.join(targetSkillsDir, '.skiller-plugins.json');
   const names = new Set<string>();
 
-  try {
-    const raw = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as unknown;
-    if (raw && typeof raw === 'object') {
-      const obj = raw as Record<string, unknown>;
-      if (Array.isArray(obj.entries)) {
-        for (const entry of obj.entries as unknown[]) {
-          if (!entry || typeof entry !== 'object') continue;
-          const e = entry as Record<string, unknown>;
-          if (typeof e.destRelPath === 'string' && e.destRelPath.length > 0) {
-            names.add(e.destRelPath);
-          }
-        }
-      }
+  for (const entry of await loadSkillsManifestEntries(targetSkillsDir)) {
+    if (isPluginManifestEntry(entry)) {
+      names.add(entry.destRelPath);
     }
-  } catch {
-    // ignore
   }
 
   // Legacy: prior versions wrote per-skill plugin marker files. Treat any
@@ -369,9 +288,18 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
   for (const targetSkillsDir of targetSkillsDirs) {
     const targetExists = await fileExists(targetSkillsDir);
 
-    const managedEntries = targetExists
-      ? ((await readManifestFile(targetSkillsDir))?.entries ?? [])
-      : [];
+    const managedEntries: ManagedEntry[] = [];
+    const otherEntries: SkillsManifestEntry[] = [];
+    if (targetExists) {
+      const allEntries = await loadSkillsManifestEntries(targetSkillsDir);
+      for (const entry of allEntries) {
+        if (isClaudeManifestEntry(entry)) {
+          managedEntries.push(entry);
+        } else {
+          otherEntries.push(entry);
+        }
+      }
+    }
 
     const prevDestByItemKey = new Map<string, string>();
     for (const entry of managedEntries) {
@@ -534,12 +462,17 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
 
     for (const item of assignedItems) {
       nextEntries.push({
+        sourceType: 'claude',
         sourceKind: item.sourceKind,
         sourceRelPath: item.sourceRelPath,
         destRelPath: item.destRelPath,
       });
     }
 
-    await writeManifestFile(targetSkillsDir, nextEntries, dryRun);
+    await writeSkillsManifestEntries(
+      targetSkillsDir,
+      [...otherEntries, ...nextEntries],
+      dryRun,
+    );
   }
 }
