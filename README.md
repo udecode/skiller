@@ -46,6 +46,14 @@ A Claude-centric fork of [ruler](https://github.com/intellectronica/ruler) with 
 
 - `[backup].enabled = false` disables `.bak` files
 
+## 8. Multi-Agent Skills Propagation
+
+- `.claude/skills/` is the source of truth — skills are automatically copied to agent-specific directories on `skiller apply`
+- Supported agent paths: `.codex/skills`, `.cursor/skills`, `.opencode/skill`, `.roo/skills`, `.gemini/skills`, `.agents/skills`
+- Shared paths are deduplicated (Claude/Copilot/Kilo share `.claude/skills`, Goose/Amp share `.agents/skills`)
+- Agent skills directories are auto-added to `.gitignore` (excluding `.claude/skills`)
+- Validates skill structure — warns on missing `SKILL.md`
+
 ---
 
 # Skiller: Centralise Your AI Coding Assistant Instructions
@@ -79,35 +87,35 @@ Skiller solves this by providing a **single source of truth** for all your AI ag
 
 ## Supported AI Agents
 
-| Agent            | Rules File(s)                                      | MCP Configuration / Notes                        |
-| ---------------- | -------------------------------------------------- | ------------------------------------------------ |
-| AGENTS.md        | `AGENTS.md`                                        | (pseudo-agent ensuring root `AGENTS.md` exists)  |
-| GitHub Copilot   | `AGENTS.md`                                        | `.vscode/mcp.json`                               |
-| Claude Code      | `CLAUDE.md` (@filename references)                 | `.mcp.json`                                      |
-| OpenAI Codex CLI | `AGENTS.md`                                        | `.codex/config.toml`                             |
-| Jules            | `AGENTS.md`                                        | -                                                |
-| Cursor           | `AGENTS.md`                                        | `.cursor/mcp.json`                               |
-| Windsurf         | `AGENTS.md`                                        | `.windsurf/mcp_config.json`                      |
-| Cline            | `.clinerules`                                      | -                                                |
-| Crush            | `CRUSH.md`                                         | `.crush.json`                                    |
-| Amp              | `AGENTS.md`                                        | -                                                |
-| Amazon Q CLI     | `.amazonq/rules/skiller_q_rules.md`                | `.amazonq/mcp.json`                              |
-| Aider            | `AGENTS.md`, `.aider.conf.yml`                     | `.mcp.json`                                      |
-| Firebase Studio  | `.idx/airules.md`                                  | `.idx/mcp.json`                                  |
-| Open Hands       | `.openhands/microagents/repo.md`                   | `config.toml`                                    |
-| Gemini CLI       | `AGENTS.md`                                        | `.gemini/settings.json`                          |
-| Junie            | `.junie/guidelines.md`                             | -                                                |
-| AugmentCode      | `.augment/rules/skiller_augment_instructions.md`   | -                                                |
-| Kilo Code        | `.kilocode/rules/skiller_kilocode_instructions.md` | `.kilocode/mcp.json`                             |
-| OpenCode         | `AGENTS.md`                                        | `opencode.json`                                  |
-| Goose            | `.goosehints`                                      | -                                                |
-| Qwen Code        | `AGENTS.md`                                        | `.qwen/settings.json`                            |
-| RooCode          | `AGENTS.md`                                        | `.roo/mcp.json`                                  |
-| Zed              | `AGENTS.md`                                        | `.zed/settings.json` (project root, never $HOME) |
-| Trae AI          | `.trae/rules/project_rules.md`                     | -                                                |
-| Warp             | `WARP.md`                                          | -                                                |
-| Kiro             | `.kiro/steering/skiller_kiro_instructions.md`      | -                                                |
-| Firebender       | `firebender.json`                                  | `firebender.json` (rules and MCP in same file)   |
+| Agent            | Rules File(s)                                      | MCP Configuration / Notes                        | Skills Location    |
+| ---------------- | -------------------------------------------------- | ------------------------------------------------ | ------------------ |
+| AGENTS.md        | `AGENTS.md`                                        | (pseudo-agent ensuring root `AGENTS.md` exists)  | -                  |
+| GitHub Copilot   | `AGENTS.md`                                        | `.vscode/mcp.json`                               | `.claude/skills/`  |
+| Claude Code      | `CLAUDE.md` (@filename references)                 | `.mcp.json`                                      | `.claude/skills/`  |
+| OpenAI Codex CLI | `AGENTS.md`                                        | `.codex/config.toml`                             | `.codex/skills/`   |
+| Jules            | `AGENTS.md`                                        | -                                                | -                  |
+| Cursor           | `AGENTS.md`                                        | `.cursor/mcp.json`                               | `.cursor/skills/`  |
+| Windsurf         | `AGENTS.md`                                        | `.windsurf/mcp_config.json`                      | -                  |
+| Cline            | `.clinerules`                                      | -                                                | -                  |
+| Crush            | `CRUSH.md`                                         | `.crush.json`                                    | -                  |
+| Amp              | `AGENTS.md`                                        | -                                                | `.agents/skills/`  |
+| Amazon Q CLI     | `.amazonq/rules/skiller_q_rules.md`                | `.amazonq/mcp.json`                              | -                  |
+| Aider            | `AGENTS.md`, `.aider.conf.yml`                     | `.mcp.json`                                      | -                  |
+| Firebase Studio  | `.idx/airules.md`                                  | `.idx/mcp.json`                                  | -                  |
+| Open Hands       | `.openhands/microagents/repo.md`                   | `config.toml`                                    | -                  |
+| Gemini CLI       | `AGENTS.md`                                        | `.gemini/settings.json`                          | `.gemini/skills/`  |
+| Junie            | `.junie/guidelines.md`                             | -                                                | -                  |
+| AugmentCode      | `.augment/rules/skiller_augment_instructions.md`   | -                                                | -                  |
+| Kilo Code        | `.kilocode/rules/skiller_kilocode_instructions.md` | `.kilocode/mcp.json`                             | `.claude/skills/`  |
+| OpenCode         | `AGENTS.md`                                        | `opencode.json`                                  | `.opencode/skill/` |
+| Goose            | `.goosehints`                                      | -                                                | `.agents/skills/`  |
+| Qwen Code        | `AGENTS.md`                                        | `.qwen/settings.json`                            | -                  |
+| RooCode          | `AGENTS.md`                                        | `.roo/mcp.json`                                  | `.roo/skills/`     |
+| Zed              | `AGENTS.md`                                        | `.zed/settings.json` (project root, never $HOME) | -                  |
+| Trae AI          | `.trae/rules/project_rules.md`                     | -                                                | -                  |
+| Warp             | `WARP.md`                                          | -                                                | -                  |
+| Kiro             | `.kiro/steering/skiller_kiro_instructions.md`      | -                                                | -                  |
+| Firebender       | `firebender.json`                                  | `firebender.json` (rules and MCP in same file)   | -                  |
 
 ## Getting Started
 
@@ -555,11 +563,21 @@ export CODEX_HOME="$(pwd)/.codex"
 
 ## Skills Support
 
-Skiller can manage and propagate Claude Code-compatible skills to supported AI agents. Skills are stored in `.claude/skills/` as the **committed source of truth** and are automatically discovered by Claude Code.
+Skiller can manage and propagate skills to supported AI agents. Skills are stored in `.claude/skills/` as the **committed source of truth** and automatically copied to agent-specific directories on `skiller apply`.
 
 ### How It Works
 
-Skills are specialized knowledge packages that extend AI agent capabilities with domain-specific expertise, workflows, or tool integrations. Skiller discovers skills in your `.claude/skills/` directory and keeps them in sync.
+Skills are specialized knowledge packages that extend AI agent capabilities. Skiller discovers skills in your `.claude/skills/` directory, keeps them in sync via bidirectional `.mdc`/`SKILL.md` sync, and propagates them to all agents with native skills support:
+
+- **Claude Code, GitHub Copilot, Kilo Code**: `.claude/skills/` (shared, source of truth)
+- **OpenAI Codex CLI**: `.codex/skills/`
+- **Cursor**: `.cursor/skills/`
+- **OpenCode**: `.opencode/skill/`
+- **Goose, Amp**: `.agents/skills/` (shared)
+- **Roo Code**: `.roo/skills/`
+- **Gemini CLI**: `.gemini/skills/`
+
+Shared paths are deduplicated — agents sharing the same directory only trigger one copy operation.
 
 ### Skills Directory Structure
 
@@ -586,11 +604,11 @@ Each skill can be defined in two ways:
 
 Skiller provides bidirectional sync between `.mdc` files and `SKILL.md` folders:
 
-| Scenario | Sync Direction |
-|----------|---------------|
-| `.mdc` exists, no `SKILL.md` | → Generate `SKILL.md` with `@reference` to .mdc |
-| `SKILL.md` body is `@reference` | .mdc is source of truth (frontmatter in SKILL.md) |
-| `SKILL.md` has full content | → Generate .mdc from body, update SKILL.md to `@reference` |
+| Scenario                        | Sync Direction                                             |
+| ------------------------------- | ---------------------------------------------------------- |
+| `.mdc` exists, no `SKILL.md`    | → Generate `SKILL.md` with `@reference` to .mdc            |
+| `SKILL.md` body is `@reference` | .mdc is source of truth (frontmatter in SKILL.md)          |
+| `SKILL.md` has full content     | → Generate .mdc from body, update SKILL.md to `@reference` |
 
 The `@reference` body pattern indicates that the `.mdc` file contains the skill content:
 
@@ -656,6 +674,12 @@ Skiller validates discovered skills and issues warnings for:
 
 Warnings don't prevent propagation but help identify potential issues.
 
+### `.gitignore` Integration
+
+When skills propagation is enabled, agent skills directories are automatically added to `.gitignore` (excluding `.claude/skills/` which is the committed source of truth):
+
+- `.codex/skills/`, `.cursor/skills/`, `.opencode/skill/`, `.agents/skills/`, `.roo/skills/`, `.gemini/skills/`
+
 ### Dry-Run Mode
 
 Test skills propagation without making changes:
@@ -664,23 +688,12 @@ Test skills propagation without making changes:
 skiller apply --dry-run
 ```
 
-This shows which skills would be synced and validated.
+This shows which skills would be synced, validated, and copied to each agent directory.
 
 ### Example Workflow
 
 ```bash
-# Option 1: Create a skill using .mdc file
-cat > .claude/skills/my-skill.mdc << 'EOF'
----
-description: My custom skill
----
-
-# My Custom Skill
-
-This skill provides specialized knowledge for...
-EOF
-
-# Option 2: Create a skill folder directly
+# 1. Create a skill folder
 mkdir -p .claude/skills/my-skill
 cat > .claude/skills/my-skill/SKILL.md << 'EOF'
 ---
@@ -693,10 +706,17 @@ description: My custom skill
 This skill provides specialized knowledge for...
 EOF
 
-# Apply to sync skills (runs bidirectional sync)
+# 2. Apply to sync and propagate skills
 skiller apply
 
-# Skills are now available to Claude Code via .claude/skills/
+# 3. Skills are now available to all compatible agents:
+#    - Claude Code, Copilot, Kilo Code: .claude/skills/my-skill/
+#    - Codex CLI: .codex/skills/my-skill/
+#    - Cursor: .cursor/skills/my-skill/
+#    - OpenCode: .opencode/skill/my-skill/
+#    - Goose, Amp: .agents/skills/my-skill/
+#    - Roo Code: .roo/skills/my-skill/
+#    - Gemini CLI: .gemini/skills/my-skill/
 ```
 
 ## `.gitignore` Integration

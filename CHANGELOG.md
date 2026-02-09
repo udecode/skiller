@@ -1,5 +1,23 @@
 # skiller
 
+## 0.7.11
+
+### Minor Changes
+
+**Multi-Agent Skills Propagation:**
+
+- `.claude/skills/` is the source of truth — skills are automatically copied to agent-specific directories on `skiller apply`
+- Supported agent paths: `.codex/skills`, `.cursor/skills`, `.opencode/skill`, `.roo/skills`, `.gemini/skills`, `.agents/skills`
+- Shared paths are deduplicated (Claude/Copilot/Kilo share `.claude/skills`, Goose/Amp share `.agents/skills`)
+- Agent skills directories are auto-added to `.gitignore` (excluding `.claude/skills`)
+- Validates skill structure — warns on missing `SKILL.md`
+- Supports `--skills` / `--no-skills` CLI flags
+
+**Bug Fixes:**
+
+- Fix reference resolution to prefer original rules path before falling back to migrated skills path
+- Dynamic import for `yargs` CLI dependency
+
 ## 0.7.10
 
 ### Patch Changes
