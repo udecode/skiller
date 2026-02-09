@@ -13,6 +13,7 @@ deepened: 2026-01-28
 **Research agents used:** kieran-typescript-reviewer, pattern-recognition-specialist, architecture-strategist, code-simplicity-reviewer, data-migration-expert, security-sentinel, agent-native-reviewer, best-practices-researcher, framework-docs-researcher, skill-creator
 
 ### Key Improvements from Research
+
 1. **Simplified sync model** - Consider eliminating two-pass sync entirely
 2. **Security fixes required** - Path traversal vulnerability in @filename expansion
 3. **Type safety** - Explicit result types with discriminated unions
@@ -20,6 +21,7 @@ deepened: 2026-01-28
 5. **Agent accessibility** - Keep full content in SKILL.md for non-Claude agents
 
 ### Critical Decisions Required
+
 - **Simplification opportunity**: Should we eliminate the .mdc sibling entirely and have users edit SKILL.md directly? (40-50% LOC reduction)
 - **MCP deprecation**: Non-Claude agents lose skill access - is this acceptable?
 
@@ -40,6 +42,7 @@ Refactor skiller to make `.claude/skills/` the committed source of truth, elimin
 Location: [src/core/SkillsProcessor.ts](src/core/SkillsProcessor.ts)
 
 Remove:
+
 - `getSkillzJsonFilePath()` (lines ~624-627)
 - `getSkillzMdcFilePaths()` (lines ~629-649)
 - `generateSkillzJsonFile()` (lines ~651-694)
@@ -51,6 +54,7 @@ Remove:
 Non-Claude agents (Codex CLI, Windsurf, Cursor via MCP) completely lose access to skills with MCP removal.
 
 **Options:**
+
 1. Keep `.skillz/` copy for MCP agents (remove server config only)
 2. Document that non-Claude agents lose skill support
 3. Add `[skills].mcp_propagation = true` option for users who need MCP skills
@@ -63,6 +67,7 @@ Removing the Skillz MCP server is a positive security change - eliminates extern
 Location: [src/constants.ts](src/constants.ts)
 
 Remove:
+
 - `SKILLZ_DIR` constant
 - `SKILLZ_MCP_SERVER_NAME` constant
 
@@ -71,6 +76,7 @@ Remove:
 Location: [src/lib.ts](src/lib.ts)
 
 Remove:
+
 - All references to `.skillz/` directory creation
 - Skillz JSON file generation calls
 - Skillz MCP server configuration
@@ -84,6 +90,7 @@ Remove any skillz-related type definitions.
 ### 1.5 Update Tests
 
 Remove/update tests in:
+
 - `tests/unit/core/skillz-mcp.test.ts` (delete file)
 - Any other tests referencing skillz functionality
 
@@ -107,7 +114,7 @@ export interface MdcFrontmatter {
   description?: string;
   globs?: string[];
   alwaysApply?: boolean;
-  synced?: boolean;  // NEW: Marker for sync direction detection
+  synced?: boolean; // NEW: Marker for sync direction detection
 }
 ```
 
@@ -128,6 +135,7 @@ Remove references to removed config options.
 Location: [src/lib.ts](src/lib.ts)
 
 Remove:
+
 - `generate_from_rules` conditional logic (lines ~137-172, ~244-263)
 - `prune` conditional logic
 - Replace with unconditional new sync behavior
@@ -210,8 +218,8 @@ interface SyncSkillsOptions {
  */
 export async function syncSkills(
   skillerDir: string,
-  options: SyncSkillsOptions = {}
-): Promise<SyncResult>
+  options: SyncSkillsOptions = {},
+): Promise<SyncResult>;
 ```
 
 ### 3.3 Implement SKILL.md Generation from .mdc
@@ -227,17 +235,24 @@ interface SkillMdOptions {
   sourceFilePath: string;
 }
 
-function generateSkillMd({ name, description, sourceFilePath }: SkillMdOptions): string {
+function generateSkillMd({
+  name,
+  description,
+  sourceFilePath,
+}: SkillMdOptions): string {
   // Use js-yaml to safely serialize frontmatter, avoiding YAML injection
-  const frontmatter = yaml.dump({
-    name,
-    description,
-    synced: true,
-  }, {
-    lineWidth: -1,      // No line wrapping
-    noRefs: true,       // No YAML anchors
-    sortKeys: false     // Preserve key order
-  });
+  const frontmatter = yaml.dump(
+    {
+      name,
+      description,
+      synced: true,
+    },
+    {
+      lineWidth: -1, // No line wrapping
+      noRefs: true, // No YAML anchors
+      sortKeys: false, // Preserve key order
+    },
+  );
 
   return `---
 ${frontmatter.trim()}
@@ -251,6 +266,7 @@ ${frontmatter.trim()}
 ### 3.4 Implement .mdc Extraction from SKILL.md
 
 For external installs (no `synced: true` marker):
+
 1. Parse SKILL.md frontmatter and body
 2. Create sibling .mdc with extracted content
 3. Add `synced: true` to SKILL.md
@@ -259,6 +275,7 @@ For external installs (no `synced: true` marker):
 ### 3.5 Handle Folder Skills
 
 For skills in `.claude/skills/{name}/SKILL.md`:
+
 - Sibling .mdc goes at `.claude/skills/{name}.mdc` (outside folder)
 - Reference in SKILL.md: `@.claude/skills/{name}.mdc`
 
@@ -270,13 +287,13 @@ This structure is counterintuitive - agents looking in the skill folder won't fi
 
 From architecture review:
 
-| Edge Case | Handling |
-|-----------|----------|
-| Simultaneous modification | Detect via content hash, warn user |
-| Marker manually removed | Treat as standalone skill |
-| New skill created manually | No marker = standalone |
-| .mdc exists but SKILL.md deleted | Regenerate SKILL.md |
-| Name collision (nested folders) | Throw error with clear message |
+| Edge Case                        | Handling                           |
+| -------------------------------- | ---------------------------------- |
+| Simultaneous modification        | Detect via content hash, warn user |
+| Marker manually removed          | Treat as standalone skill          |
+| New skill created manually       | No marker = standalone             |
+| .mdc exists but SKILL.md deleted | Regenerate SKILL.md                |
+| Name collision (nested folders)  | Throw error with clear message     |
 
 ---
 
@@ -290,7 +307,11 @@ Location: NEW FILE [src/core/SkillsMigration.ts](src/core/SkillsMigration.ts)
 export interface MigrationResult {
   success: boolean;
   created: Array<{ name: string; path: string }>;
-  skipped: Array<{ name: string; path: string; reason: 'already_exists' | 'already_synced' }>;
+  skipped: Array<{
+    name: string;
+    path: string;
+    reason: 'already_exists' | 'already_synced';
+  }>;
   updated: Array<{ name: string; path: string }>;
   warnings: string[];
   error?: string;
@@ -301,8 +322,8 @@ export interface MigrationResult {
  */
 export async function migrateFromRules(
   skillerDir: string,
-  options: { dryRun?: boolean; verbose?: boolean } = {}
-): Promise<MigrationResult>
+  options: { dryRun?: boolean; verbose?: boolean } = {},
+): Promise<MigrationResult>;
 ```
 
 ### Research Insights
@@ -315,6 +336,7 @@ export async function migrateFromRules(
    - Fix: Either inline content OR change reference to new location
 
 2. **Add collision detection:**
+
    ```typescript
    if (generatedSkillNames.has(fileName)) {
      throw new Error(`Duplicate skill name: ${fileName}`);
@@ -322,11 +344,12 @@ export async function migrateFromRules(
    ```
 
 3. **Implement atomic migration:**
+
    ```typescript
    const tempDir = `${skillsDir}.tmp-${Date.now()}`;
    try {
      await performMigration(rulesDir, tempDir);
-     await fs.rename(tempDir, skillsDir);  // Atomic
+     await fs.rename(tempDir, skillsDir); // Atomic
      await fs.rm(rulesDir, { recursive: true });
    } catch (error) {
      await fs.rm(tempDir, { recursive: true, force: true });
@@ -335,6 +358,7 @@ export async function migrateFromRules(
    ```
 
 4. **Create backup before deletion:**
+
    ```typescript
    const backupPath = `${rulesDir}.backup-${Date.now()}`;
    await fs.cp(rulesDir, backupPath, { recursive: true });
@@ -343,7 +367,7 @@ export async function migrateFromRules(
 5. **Add migration marker to prevent re-running:**
    ```typescript
    const migrationMarker = path.join(skillsDir, '.migrated');
-   if (await fileExists(migrationMarker)) return;  // Already done
+   if (await fileExists(migrationMarker)) return; // Already done
    ```
 
 ### 4.2 Update Apply Command
@@ -351,6 +375,7 @@ export async function migrateFromRules(
 Location: [src/lib.ts](src/lib.ts)
 
 Add migration check at start of apply:
+
 1. If `.claude/rules/` exists → run migration
 2. After successful migration → delete rules folder
 3. Proceed with normal sync
@@ -364,6 +389,7 @@ Add migration check at start of apply:
 Location: [src/core/SkillsProcessor.ts:54-95](src/core/SkillsProcessor.ts#L54-L95)
 
 Update `getSkillsGitignorePaths()`:
+
 - Remove `.claude/skills/` from auto-gitignore list
 - Keep `.skillz/` removal (cleanup for old installations)
 
@@ -373,6 +399,7 @@ Update `getSkillsGitignorePaths()`:
 Committing `.claude/skills/` could expose sensitive data if users accidentally include API keys in skill content.
 
 **Recommendation:**
+
 - Document this change prominently in migration notes
 - Consider adding pre-commit validation that scans for common secret patterns
 
@@ -391,6 +418,7 @@ Ensure no references add `.claude/skills/` to gitignore.
 Location: [src/core/SkillsProcessor.ts:205-277](src/core/SkillsProcessor.ts#L205-L277)
 
 Remove:
+
 - `pruneOrphanedSkills()` function
 - `isSkillOrphaned()` helper
 - All orphan detection logic
@@ -415,6 +443,7 @@ Location: [src/core/SkillsUtils.ts:183-217](src/core/SkillsUtils.ts#L183-L217)
 **Attack:** `@../../../etc/passwd` could read arbitrary files.
 
 **Fix:**
+
 ```typescript
 const absolutePath = path.resolve(projectRoot, filePath);
 const normalizedProjectRoot = path.resolve(projectRoot);
@@ -430,14 +459,16 @@ if (!absolutePath.startsWith(normalizedProjectRoot + path.sep)) {
 Location: [src/core/FrontmatterParser.ts:46](src/core/FrontmatterParser.ts#L46)
 
 **Current:**
+
 ```typescript
 const parsed = yaml.load(yamlContent) as Record<string, unknown> | null;
 ```
 
 **Fix:**
+
 ```typescript
 const parsed = yaml.load(yamlContent, {
-  schema: yaml.JSON_SCHEMA  // Explicit safe schema
+  schema: yaml.JSON_SCHEMA, // Explicit safe schema
 }) as Record<string, unknown> | null;
 ```
 
@@ -446,6 +477,7 @@ const parsed = yaml.load(yamlContent, {
 Location: Multiple files
 
 Add `MAX_DEPTH = 50` to:
+
 - `findAllSkillerDirs()` in FileSystemUtils.ts
 - `findMdcFiles()` in SkillsProcessor.ts
 - `walkSkillsTree()` in SkillsUtils.ts
@@ -457,6 +489,7 @@ Add `MAX_DEPTH = 50` to:
 ### 8.1 Update Unit Tests
 
 Files to update:
+
 - `tests/unit/core/SkillsProcessor.test.ts` - update for new sync behavior
 - `tests/unit/core/copy-skill-folders-from-rules.test.ts` - may need updates
 
@@ -465,36 +498,38 @@ Files to update:
 ```typescript
 // tests/unit/core/SkillsSync.test.ts
 describe('syncSkills', () => {
-  it('creates SKILL.md with synced marker for new skills', async () => { });
-  it('is idempotent - running twice produces same result', async () => { });
-  it('preserves manually created skills without synced marker', async () => { });
-  it('handles concurrent modifications safely', async () => { });
+  it('creates SKILL.md with synced marker for new skills', async () => {});
+  it('is idempotent - running twice produces same result', async () => {});
+  it('preserves manually created skills without synced marker', async () => {});
+  it('handles concurrent modifications safely', async () => {});
 });
 
 // tests/unit/core/SkillsMigration.test.ts
 describe('migrateFromRules', () => {
-  it('migrates .mdc files to new structure', async () => { });
-  it('detects and errors on duplicate skill names', async () => { });
-  it('is atomic - partial failure rolls back', async () => { });
-  it('creates backup before deleting rules', async () => { });
+  it('migrates .mdc files to new structure', async () => {});
+  it('detects and errors on duplicate skill names', async () => {});
+  it('is atomic - partial failure rolls back', async () => {});
+  it('creates backup before deleting rules', async () => {});
 });
 
 // tests/unit/security/path-traversal.test.ts
 describe('expandAtFilenameReferences', () => {
-  it('blocks references outside project root', async () => { });
-  it('blocks absolute path references', async () => { });
+  it('blocks references outside project root', async () => {});
+  it('blocks absolute path references', async () => {});
 });
 ```
 
 ### 8.3 Update Integration Tests
 
 Files to update:
+
 - `tests/integration/apply-skills.test.ts` - test new sync flow
 - Add new integration tests for external skill installs
 
 ### 8.4 Update E2E Tests
 
 Files to update:
+
 - `tests/e2e/basic-apply.test.ts` - ensure new structure works
 
 ---
@@ -515,6 +550,7 @@ Files to update:
 ## Test Verification
 
 Before each phase:
+
 ```bash
 npm test
 npm run lint
@@ -522,6 +558,7 @@ npm run build
 ```
 
 After all phases:
+
 ```bash
 npm ci && npm run lint && npm test && npm run build
 ```
@@ -531,11 +568,13 @@ npm ci && npm run lint && npm test && npm run build
 ## Rollback Strategy
 
 Each phase should be a separate commit. If issues arise:
+
 1. Revert to last working commit
 2. Fix issues
 3. Recommit
 
 **Migration Rollback:**
+
 1. Set feature flag (if kept)
 2. Restore from backup
 3. Re-run `skiller apply`
