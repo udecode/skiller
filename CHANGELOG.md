@@ -1,5 +1,19 @@
 # skiller
 
+## 0.7.15
+
+### Minor Changes
+
+**Claude Code Plugins → Skills:**
+
+- Reads `.claude/settings.json` `enabledPlugins`
+- Syncs enabled plugin `skills/` into agent skills directories on `skiller apply`
+- Syncs enabled plugin `commands/*.md` as skills (`SKILL.md`) into agent skills directories
+- Uses the skill/command name by default
+- If a name conflicts, local skills win and the plugin skill is namespaced as `<pluginId>__<name>`
+- Tracks plugin-managed skills via `.skiller-plugins.json` in each agent skills directory
+- Removes stale plugin skills when plugins are disabled
+
 ## 0.7.11
 
 ### Minor Changes

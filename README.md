@@ -54,6 +54,16 @@ A Claude-centric fork of [ruler](https://github.com/intellectronica/ruler) with 
 - Agent skills directories are auto-added to `.gitignore` (excluding `.claude/skills`)
 - Validates skill structure — warns on missing `SKILL.md`
 
+## 9. Claude Code Plugins → Skills
+
+- Reads `.claude/settings.json` `enabledPlugins`
+- Syncs enabled plugin `skills/` into agent skills directories on `skiller apply`
+- Syncs enabled plugin `commands/*.md` as skills (`SKILL.md`) into agent skills directories
+- Uses the skill/command name by default (matches existing Codex skill names)
+- If a name conflicts, local skills win and the plugin skill is namespaced as `<pluginId>__<name>`
+- Tracks plugin-managed skills in a single `.skiller-plugins.json` file per agent skills directory
+- Removes stale plugin skills when plugins are disabled
+
 ---
 
 # Skiller: Centralise Your AI Coding Assistant Instructions
@@ -578,6 +588,16 @@ Skills are specialized knowledge packages that extend AI agent capabilities. Ski
 - **Gemini CLI**: `.gemini/skills/`
 
 Shared paths are deduplicated — agents sharing the same directory only trigger one copy operation.
+
+### Claude Code Plugins
+
+If your project enables Claude Code plugins in `.claude/settings.json`, Skiller also syncs plugin content into agent skills directories on `skiller apply`:
+
+- Plugin `skills/` are copied as skills
+- Plugin `commands/*.md` are converted into skills (`SKILL.md`)
+- Plugin skills use their original skill/command name by default
+- If a name conflicts, local skills win and the plugin skill is namespaced as `<pluginId>__<name>`
+- Plugin-managed skills are tracked via `.skiller-plugins.json` in each agent skills directory
 
 ### Skills Directory Structure
 

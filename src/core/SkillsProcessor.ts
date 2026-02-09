@@ -681,62 +681,8 @@ export async function propagateSkills(
     ? path.join(skillerDir, 'skills')
     : path.join(projectRoot, CLAUDE_SKILLS_PATH);
 
-  // Check if skills directory exists
-  try {
-    await fs.access(skillsDir);
-  } catch {
-    // No skills directory - this is fine
-    logVerboseInfo(
-      `No .claude/skills directory found, skipping skills propagation`,
-      verbose,
-      dryRun,
-    );
-    return;
-  }
-
-  // Sync standalone .mdc files to SKILL.md folders before discovery
-  const syncResult = await syncMdcToSkillMd(skillsDir, verbose, dryRun);
-  if (syncResult.synced.length > 0) {
-    logVerboseInfo(
-      `Synced ${syncResult.synced.length} .mdc file(s) to SKILL.md`,
-      verbose,
-      dryRun,
-    );
-  }
-  for (const warning of syncResult.warnings) {
-    logWarn(warning, dryRun);
-  }
-
-  // Discover and validate skills
-  const { skills, warnings, deleted } = await discoverSkills(
-    projectRoot,
-    skillerDir,
-  );
-
-  if (deleted.length > 0) {
-    logVerboseInfo(
-      `Deleted ${deleted.length} empty folder(s): ${deleted.join(', ')}`,
-      verbose,
-      dryRun,
-    );
-  }
-
-  if (warnings.length > 0) {
-    for (const warning of warnings) {
-      logWarn(warning, dryRun);
-    }
-  }
-
-  if (skills.length === 0) {
-    logVerboseInfo('No valid skills found in .claude/skills', verbose, dryRun);
-    return;
-  }
-
-  logVerboseInfo(`Discovered ${skills.length} skill(s)`, verbose, dryRun);
-
-  // Copy skills to all agents with native skills support
+  // Compute destinations up-front so plugin sync can run even if .claude/skills is missing.
   const destinationPaths = new Set<string>();
-
   for (const agent of agents) {
     if (agent.supportsNativeSkills?.() && agent.getSkillsPath) {
       const targetPath = agent.getSkillsPath(projectRoot);
@@ -747,27 +693,95 @@ export async function propagateSkills(
     }
   }
 
-  // Copy skills to each unique destination
-  for (const targetPath of destinationPaths) {
-    const result = await copySkillsToAgent(
-      skillsDir,
-      targetPath,
+  // Check if skills directory exists
+  let skillsDirExists = true;
+  try {
+    await fs.access(skillsDir);
+  } catch {
+    skillsDirExists = false;
+    logVerboseInfo(`No .claude/skills directory found`, verbose, dryRun);
+  }
+
+  if (skillsDirExists) {
+    // Sync standalone .mdc files to SKILL.md folders before discovery
+    const syncResult = await syncMdcToSkillMd(skillsDir, verbose, dryRun);
+    if (syncResult.synced.length > 0) {
+      logVerboseInfo(
+        `Synced ${syncResult.synced.length} .mdc file(s) to SKILL.md`,
+        verbose,
+        dryRun,
+      );
+    }
+    for (const warning of syncResult.warnings) {
+      logWarn(warning, dryRun);
+    }
+
+    // Discover and validate skills
+    const { skills, warnings, deleted } = await discoverSkills(
       projectRoot,
-      verbose,
-      dryRun,
+      skillerDir,
     );
 
-    if (result.copied > 0) {
+    if (deleted.length > 0) {
       logVerboseInfo(
-        `Copied ${result.copied} skill(s) to ${targetPath}`,
+        `Deleted ${deleted.length} empty folder(s): ${deleted.join(', ')}`,
         verbose,
         dryRun,
       );
     }
 
-    for (const warning of result.warnings) {
-      logWarn(warning, dryRun);
+    if (warnings.length > 0) {
+      for (const warning of warnings) {
+        logWarn(warning, dryRun);
+      }
     }
+
+    if (skills.length === 0) {
+      logVerboseInfo(
+        'No valid skills found in .claude/skills',
+        verbose,
+        dryRun,
+      );
+    } else {
+      logVerboseInfo(`Discovered ${skills.length} skill(s)`, verbose, dryRun);
+
+      // Copy skills to each unique destination
+      for (const targetPath of destinationPaths) {
+        const result = await copySkillsToAgent(
+          skillsDir,
+          targetPath,
+          projectRoot,
+          verbose,
+          dryRun,
+        );
+
+        if (result.copied > 0) {
+          logVerboseInfo(
+            `Copied ${result.copied} skill(s) to ${targetPath}`,
+            verbose,
+            dryRun,
+          );
+        }
+
+        for (const warning of result.warnings) {
+          logWarn(warning, dryRun);
+        }
+      }
+    }
+  }
+
+  // Sync Claude plugins (skills + commands converted to skills) into agent skills dirs.
+  // This intentionally does NOT write into the committed .claude/skills source-of-truth.
+  if (destinationPaths.size > 0) {
+    const { syncClaudePluginsToSkillsDirs } = await import(
+      './ClaudePluginSync'
+    );
+    await syncClaudePluginsToSkillsDirs({
+      projectRoot,
+      targetSkillsDirs: [...destinationPaths],
+      verbose,
+      dryRun,
+    });
   }
 }
 
