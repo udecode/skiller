@@ -53,26 +53,29 @@ A Claude-centric fork of [ruler](https://github.com/intellectronica/ruler) with 
 - Shared paths are deduplicated (Claude/Copilot/Kilo share `.claude/skills`, Goose/Amp share `.agents/skills`)
 - Agent skills directories are auto-added to `.gitignore` (excluding `.claude/skills`)
 - Validates skill structure — warns on missing `SKILL.md`
+- Flattens nested skills into dash-separated names for agent skills dirs (e.g., `workflows/lfg` → `workflows-lfg`)
 
 ## 9. Claude Code Plugins → Skills
 
 - Reads `.claude/settings.json` `enabledPlugins`
-- Syncs enabled plugin `skills/` into agent skills directories on `skiller apply`
-- Syncs enabled plugin `commands/*.md` as skills (`SKILL.md`) into agent skills directories
+- Reads plugin content from `~/.claude/plugins/marketplaces` (never from `cache/`)
+- Syncs enabled plugin `skills/` into agent skills directories on `skiller apply` (recursive, flattened names)
+- Syncs enabled plugin `commands/**/*.md` as skills (`SKILL.md`) into agent skills directories (recursive, flattened names)
 - Syncs enabled plugin `agents/**/*.md` as skills (`SKILL.md`) into agent skills directories
 - Uses the skill/command/agent name by default (matches existing Codex skill names)
-- If a name conflicts, local skills win and the plugin skill is namespaced as `<pluginId>-<name>`
-- Tracks plugin-managed skills in a single `.skiller.json` file per agent skills directory
+- If a name conflicts, local skills win and the plugin item is namespaced as `<pluginName>-<name>` (numeric suffix if multiple enabled plugins share the same name)
+- Tracks plugin-managed items in `.claude/.skiller.json` (per project, grouped by agent skills dir)
 - Removes stale plugin skills when plugins are disabled
 
 ## 10. Claude Commands/Agents → Skills
 
 - Syncs `.claude/commands/**/*.md` as skills (`SKILL.md`) into agent skills directories
+- Flattens nested commands into dash-separated names (e.g., `workflows/brainstorm.md` → `workflows-brainstorm`)
 - Syncs `.claude/agents/**/*.md` as skills (`SKILL.md`) into agent skills directories
 - Uses the command/agent name by default
 - If a name conflicts, existing local/manual skills win and the project item is namespaced as `claude-<name>`
 - Project items win over plugin skills/commands/agents on name conflicts
-- Tracks project-managed items in a single `.skiller.json` file per agent skills directory
+- Tracks project-managed items in `.claude/.skiller.json` (per project, grouped by agent skills dir)
 
 ---
 
@@ -604,10 +607,11 @@ Shared paths are deduplicated — agents sharing the same directory only trigger
 If your project enables Claude Code plugins in `.claude/settings.json`, Skiller also syncs plugin content into agent skills directories on `skiller apply`:
 
 - Plugin `skills/` are copied as skills
-- Plugin `commands/*.md` are converted into skills (`SKILL.md`)
+- Plugin `commands/**/*.md` are converted into skills (`SKILL.md`)
+- Plugin `agents/**/*.md` are converted into skills (`SKILL.md`)
 - Plugin skills use their original skill/command name by default
-- If a name conflicts, local skills win and the plugin skill is namespaced as `<pluginId>-<name>`
-- Plugin-managed skills are tracked via `.skiller.json` in each agent skills directory
+- If a name conflicts, local skills win and the plugin item is namespaced as `<pluginName>-<name>` (numeric suffix if multiple enabled plugins share the same name)
+- Plugin-managed items are tracked via `.claude/.skiller.json` (per project, grouped by agent skills dir)
 
 ### Skills Directory Structure
 

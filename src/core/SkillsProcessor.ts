@@ -578,6 +578,40 @@ export async function copySkillsToAgent(
   const warnings: string[] = [];
   let copied = 0;
 
+  function sanitizeId(value: string): string {
+    return value.replace(/[^A-Za-z0-9._-]+/g, '_');
+  }
+
+  function flattenRelativeSkillPath(relativeSkillPath: string): string {
+    const normalized = relativeSkillPath.replace(/\\/g, '/');
+    const segments = normalized.split('/').filter(Boolean);
+    return segments.map(sanitizeId).join('-');
+  }
+
+  async function rewriteSkillMdName(
+    skillMdPath: string,
+    name: string,
+  ): Promise<void> {
+    let content: string;
+    try {
+      content = await fs.readFile(skillMdPath, 'utf8');
+    } catch {
+      return;
+    }
+
+    const { rawFrontmatter, body } = parseFrontmatter(content);
+    const fm: Record<string, unknown> = rawFrontmatter
+      ? { ...rawFrontmatter }
+      : {};
+    fm.name = name;
+
+    const next = `---\n${yaml
+      .dump(fm, { lineWidth: -1, noRefs: true })
+      .trim()}\n---\n\n${body}\n`;
+
+    await fs.writeFile(skillMdPath, next, 'utf8');
+  }
+
   try {
     await fs.access(sourceSkillsDir);
   } catch {
@@ -588,8 +622,17 @@ export async function copySkillsToAgent(
   // Use walkSkillsTree to discover skills
   const skillsTree = await walkSkillsTree(sourceSkillsDir);
 
+  // Deterministic order so name collision suffixing is stable.
+  const sortedSkills = [...skillsTree.skills].sort((a, b) => {
+    const ar = path.relative(sourceSkillsDir, a.path).replace(/\\/g, '/');
+    const br = path.relative(sourceSkillsDir, b.path).replace(/\\/g, '/');
+    return ar.localeCompare(br);
+  });
+
+  const taken = new Set<string>();
+
   // Validate and copy each skill
-  for (const skill of skillsTree.skills) {
+  for (const skill of sortedSkills) {
     // skill.path is absolute, use it directly
     const skillPath = skill.path;
     const skillMdPath = path.join(skillPath, SKILL_MD_FILENAME);
@@ -604,9 +647,18 @@ export async function copySkillsToAgent(
       continue;
     }
 
-    // Copy skill directory to target using relative path
+    // Flatten nested skills into root-level skill folders for other agents:
+    // `category/foo` -> `category-foo`
     const relativeSkillPath = path.relative(sourceSkillsDir, skill.path);
-    const targetSkillPath = path.join(targetSkillsDir, relativeSkillPath);
+    const baseDestName = flattenRelativeSkillPath(relativeSkillPath);
+    let destName = baseDestName;
+    let i = 2;
+    while (taken.has(destName)) {
+      destName = `${baseDestName}-${i++}`;
+    }
+    taken.add(destName);
+
+    const targetSkillPath = path.join(targetSkillsDir, destName);
 
     if (!dryRun) {
       await copySkillDirectoryForNonClaudeAgents(
@@ -615,6 +667,14 @@ export async function copySkillsToAgent(
         projectRoot,
         skillPath,
       );
+
+      const sourceLeafName = path.basename(skillPath);
+      if (destName !== sourceLeafName) {
+        await rewriteSkillMdName(
+          path.join(targetSkillPath, SKILL_MD_FILENAME),
+          destName,
+        );
+      }
     }
 
     logVerboseInfo(

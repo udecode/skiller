@@ -34,14 +34,31 @@ enabled = true
     const { projectRoot } = testProject;
 
     const pluginId = 'testplugin@testmarket';
-    const pluginInstallPath = path.join(tmpHome, 'plugin-cache', 'testplugin');
+    const pluginSourcePath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'marketplaces',
+      'testmarket',
+      'plugins',
+      'testplugin',
+    );
+    const pluginCacheInstallPath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'cache',
+      'testmarket',
+      'testplugin',
+      '1.0.0',
+    );
 
     // Plugin command
-    await fs.mkdir(path.join(pluginInstallPath, 'commands'), {
+    await fs.mkdir(path.join(pluginSourcePath, 'commands'), {
       recursive: true,
     });
     await fs.writeFile(
-      path.join(pluginInstallPath, 'commands', 'do-thing.md'),
+      path.join(pluginSourcePath, 'commands', 'do-thing.md'),
       `---
 description: Do the thing
 ---
@@ -51,12 +68,12 @@ Do something.
     );
 
     // Plugin agent
-    await fs.mkdir(path.join(pluginInstallPath, 'agents', 'research'), {
+    await fs.mkdir(path.join(pluginSourcePath, 'agents', 'research'), {
       recursive: true,
     });
     await fs.writeFile(
       path.join(
-        pluginInstallPath,
+        pluginSourcePath,
         'agents',
         'research',
         'framework-docs-researcher.md',
@@ -89,7 +106,7 @@ Find docs and summarize.
               {
                 scope: 'project',
                 projectPath: projectRoot,
-                installPath: pluginInstallPath,
+                installPath: pluginCacheInstallPath,
                 version: '1.0.0',
                 installedAt: '2026-02-01T00:00:00.000Z',
                 lastUpdated: '2026-02-02T00:00:00.000Z',

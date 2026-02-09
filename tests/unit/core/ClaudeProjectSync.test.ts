@@ -86,8 +86,11 @@ Find docs and summarize.
     expect(parsedAgent.body).toContain('Find docs and summarize.');
 
     await expect(
-      fs.access(path.join(targetSkillsDir, '.skiller.json')),
+      fs.access(path.join(tmpDir, '.claude', '.skiller.json')),
     ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(targetSkillsDir, '.skiller.json')),
+    ).rejects.toThrow();
 
     // Remove command and re-sync: should cleanup managed folder
     await fs.rm(path.join(projectClaudeDir, 'commands', 'do-thing.md'));
@@ -105,6 +108,51 @@ Find docs and summarize.
     await expect(
       fs.access(path.join(targetSkillsDir, 'framework-docs-researcher')),
     ).resolves.toBeUndefined();
+  });
+
+  it('discovers nested project commands recursively and flattens them to dash-separated names', async () => {
+    const projectClaudeDir = path.join(tmpDir, '.claude');
+    const nestedCommandsDir = path.join(projectClaudeDir, 'commands', 'workflows');
+    await fs.mkdir(nestedCommandsDir, { recursive: true });
+
+    await fs.writeFile(
+      path.join(nestedCommandsDir, 'brainstorm.md'),
+      `---
+description: Brainstorm
+---
+
+From nested project command.
+`,
+    );
+
+    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+
+    const { syncClaudeProjectCommandsAndAgentsToSkillsDirs } = await import(
+      '../../../src/core/ClaudeProjectSync'
+    );
+
+    await syncClaudeProjectCommandsAndAgentsToSkillsDirs({
+      projectRoot: tmpDir,
+      targetSkillsDirs: [targetSkillsDir],
+      verbose: false,
+      dryRun: false,
+    });
+
+    const expectedDir = path.join(targetSkillsDir, 'workflows-brainstorm');
+    const installedMd = await fs.readFile(
+      path.join(expectedDir, 'SKILL.md'),
+      'utf8',
+    );
+    expect(parseFrontmatter(installedMd).rawFrontmatter?.name).toBe(
+      'workflows-brainstorm',
+    );
+    expect(parseFrontmatter(installedMd).body).toContain(
+      'From nested project command.',
+    );
+
+    await expect(
+      fs.access(path.join(targetSkillsDir, 'brainstorm')),
+    ).rejects.toThrow();
   });
 
   it('namespaces project items only when they conflict with an existing (manual) skill', async () => {
@@ -173,15 +221,32 @@ Manual content.
 
   it('project commands can take over a previously plugin-managed name (plugin moves to namespaced on next sync)', async () => {
     const pluginId = 'testplugin@testmarket';
-    const pluginInstallPath = path.join(tmpHome, 'plugin-cache', 'testplugin');
-    await fs.mkdir(pluginInstallPath, { recursive: true });
+    const pluginSourcePath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'marketplaces',
+      'testmarket',
+      'plugins',
+      'testplugin',
+    );
+    const pluginCacheInstallPath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'cache',
+      'testmarket',
+      'testplugin',
+      '1.0.0',
+    );
+    await fs.mkdir(pluginSourcePath, { recursive: true });
 
     // Plugin command (converted to skill)
-    await fs.mkdir(path.join(pluginInstallPath, 'commands'), {
+    await fs.mkdir(path.join(pluginSourcePath, 'commands'), {
       recursive: true,
     });
     await fs.writeFile(
-      path.join(pluginInstallPath, 'commands', 'do-thing.md'),
+      path.join(pluginSourcePath, 'commands', 'do-thing.md'),
       `---
 description: Plugin wins first
 ---
@@ -208,7 +273,7 @@ From plugin.
               {
                 scope: 'project',
                 projectPath: tmpDir,
-                installPath: pluginInstallPath,
+                installPath: pluginCacheInstallPath,
                 version: '1.0.0',
                 installedAt: '2026-02-01T00:00:00.000Z',
                 lastUpdated: '2026-02-02T00:00:00.000Z',
@@ -304,10 +369,81 @@ From project.
       fs.access(
         path.join(
           targetSkillsDir,
-          'testplugin_testmarket-do-thing',
+          'testplugin-do-thing',
           'SKILL.md',
         ),
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it('treats nested local .claude/skills as flattened names when reserving against project commands/agents', async () => {
+    const projectClaudeDir = path.join(tmpDir, '.claude');
+    await fs.mkdir(path.join(projectClaudeDir, 'commands'), {
+      recursive: true,
+    });
+
+    await fs.writeFile(
+      path.join(projectClaudeDir, 'commands', 'lfg.md'),
+      `---
+description: LFG
+---
+
+From project lfg.
+`,
+    );
+
+    await fs.writeFile(
+      path.join(projectClaudeDir, 'commands', 'workflows-lfg.md'),
+      `---
+description: Workflows LFG
+---
+
+From project workflows-lfg.
+`,
+    );
+
+    // Nested local skill: .claude/skills/workflows/lfg (copies to workflows-lfg)
+    const localSkillDir = path.join(
+      projectClaudeDir,
+      'skills',
+      'workflows',
+      'lfg',
+    );
+    await fs.mkdir(localSkillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(localSkillDir, 'SKILL.md'),
+      `---
+name: lfg
+description: Local nested skill
+---
+
+Local nested content.
+`,
+    );
+
+    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const { syncClaudeProjectCommandsAndAgentsToSkillsDirs } = await import(
+      '../../../src/core/ClaudeProjectSync'
+    );
+
+    await syncClaudeProjectCommandsAndAgentsToSkillsDirs({
+      projectRoot: tmpDir,
+      targetSkillsDirs: [targetSkillsDir],
+      verbose: false,
+      dryRun: false,
+    });
+
+    // Project 'lfg' can use its base name (no conflict with workflows-lfg)
+    await expect(
+      fs.access(path.join(targetSkillsDir, 'lfg', 'SKILL.md')),
+    ).resolves.toBeUndefined();
+
+    // Project 'workflows-lfg' conflicts with local nested (flattened) name, so it must be namespaced
+    await expect(
+      fs.access(path.join(targetSkillsDir, 'claude-workflows-lfg', 'SKILL.md')),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(targetSkillsDir, 'workflows-lfg')),
+    ).rejects.toThrow();
   });
 });

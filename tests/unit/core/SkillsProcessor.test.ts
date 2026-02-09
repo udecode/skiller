@@ -118,7 +118,7 @@ This is a test skill.`;
       ).toBe('console.log("helper");');
     });
 
-    it('should preserve directory structure when copying', async () => {
+    it('should flatten nested skill folders when copying to other agents', async () => {
       const sourceDir = path.join(tmpDir, 'source');
       const targetDir = path.join(tmpDir, 'target');
       const nestedSkillDir = path.join(sourceDir, 'category', 'test-skill');
@@ -150,23 +150,21 @@ description: Nested skill
 
       expect(result.copied).toBe(1);
 
-      // Verify nested structure preserved
+      // Verify nested structure flattened and SKILL.md renamed
       const targetSkillMd = path.join(
         targetDir,
-        'category',
-        'test-skill',
+        'category-test-skill',
         'SKILL.md',
       );
       const targetHelper = path.join(
         targetDir,
-        'category',
-        'test-skill',
+        'category-test-skill',
         'helper.js',
       );
 
-      expect(await fs.readFile(targetSkillMd, 'utf8')).toContain(
-        'Nested Skill',
-      );
+      const copiedSkillMd = await fs.readFile(targetSkillMd, 'utf8');
+      expect(copiedSkillMd).toContain('Nested Skill');
+      expect(copiedSkillMd).toContain('name: category-test-skill');
       expect(await fs.readFile(targetHelper, 'utf8')).toBe(
         'console.log("helper");',
       );

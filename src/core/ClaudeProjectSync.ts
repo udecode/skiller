@@ -84,7 +84,14 @@ async function discoverCommandFiles(
         continue;
       }
       if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
-      const name = sanitizeId(path.basename(entry.name, '.md'));
+      const relFromCommands = path
+        .relative(commandsRoot, full)
+        .replace(/\\/g, '/');
+      const withoutExt = relFromCommands.endsWith('.md')
+        ? relFromCommands.slice(0, -'.md'.length)
+        : relFromCommands;
+      const segments = withoutExt.split('/').filter(Boolean);
+      const name = segments.map(sanitizeId).join('-');
       const rel = path.relative(projectRoot, full).replace(/\\/g, '/');
       results.push({ name, file: full, rel });
     }
@@ -181,11 +188,15 @@ async function writeMarkdownAsSkill(
 }
 
 async function readPluginManagedDestNames(
+  projectRoot: string,
   targetSkillsDir: string,
 ): Promise<Set<string>> {
   const names = new Set<string>();
 
-  for (const entry of await loadSkillsManifestEntries(targetSkillsDir)) {
+  for (const entry of await loadSkillsManifestEntries(
+    projectRoot,
+    targetSkillsDir,
+  )) {
     if (isPluginManifestEntry(entry)) {
       names.add(entry.destRelPath);
     }
@@ -233,7 +244,13 @@ async function discoverLocalSkillNames(
 
     const hasSkillMd = entries.some((e) => e.isFile() && e.name === 'SKILL.md');
     if (hasSkillMd) {
-      names.add(path.basename(current));
+      const rel = path.relative(localSkillsDir, current).replace(/\\/g, '/');
+      const segments = rel.split('/').filter(Boolean);
+      if (segments.length > 0) {
+        names.add(segments.map(sanitizeId).join('-'));
+      } else {
+        names.add(sanitizeId(path.basename(current)));
+      }
       return;
     }
 
@@ -291,7 +308,10 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
     const managedEntries: ManagedEntry[] = [];
     const otherEntries: SkillsManifestEntry[] = [];
     if (targetExists) {
-      const allEntries = await loadSkillsManifestEntries(targetSkillsDir);
+      const allEntries = await loadSkillsManifestEntries(
+        projectRoot,
+        targetSkillsDir,
+      );
       for (const entry of allEntries) {
         if (isClaudeManifestEntry(entry)) {
           managedEntries.push(entry);
@@ -314,7 +334,7 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
     );
 
     const pluginManagedDest = targetExists
-      ? await readPluginManagedDestNames(targetSkillsDir)
+      ? await readPluginManagedDestNames(projectRoot, targetSkillsDir)
       : new Set<string>();
 
     const reserved = new Set<string>(localSkillNames);
@@ -470,6 +490,7 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
     }
 
     await writeSkillsManifestEntries(
+      projectRoot,
       targetSkillsDir,
       [...otherEntries, ...nextEntries],
       dryRun,

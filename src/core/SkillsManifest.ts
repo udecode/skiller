@@ -2,6 +2,8 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { Dirent } from 'fs';
 
+// Project-level manifest (stored in `.claude/.skiller.json`) that tracks what
+// Skiller installed into each target agent skills directory for this project.
 export const SKILLS_MANIFEST_FILENAME = '.skiller.json';
 export const LEGACY_UNIFIED_SKILLS_MANIFEST_FILENAME = '.skiller-skills.json';
 export const LEGACY_PLUGIN_MANIFEST_FILENAME = '.skiller-plugins.json';
@@ -28,9 +30,9 @@ export interface ClaudeSkillsManifestEntry {
   destRelPath: string;
 }
 
-interface SkillsManifestFile {
+interface ProjectSkillsManifestFile {
   version: number;
-  entries: SkillsManifestEntry[];
+  targets: Record<string, SkillsManifestEntry[]>;
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -140,6 +142,46 @@ function parseUnifiedEntries(raw: unknown): SkillsManifestEntry[] {
   return entries;
 }
 
+function normalizePathForKey(p: string): string {
+  return path.resolve(p).replace(/\\/g, '/');
+}
+
+function computeTargetKey(
+  projectRoot: string,
+  targetSkillsDir: string,
+): string {
+  const resolvedProjectRoot = path.resolve(projectRoot);
+  const resolvedTarget = path.resolve(targetSkillsDir);
+  if (resolvedTarget === resolvedProjectRoot) return '.';
+  if (resolvedTarget.startsWith(resolvedProjectRoot + path.sep)) {
+    return path
+      .relative(resolvedProjectRoot, resolvedTarget)
+      .replace(/\\/g, '/');
+  }
+  return normalizePathForKey(resolvedTarget);
+}
+
+function parseProjectTargets(
+  raw: unknown,
+): Record<string, SkillsManifestEntry[]> {
+  if (!raw || typeof raw !== 'object') return {};
+  const obj = raw as Record<string, unknown>;
+  if (!obj.targets || typeof obj.targets !== 'object') return {};
+
+  const targetsObj = obj.targets as Record<string, unknown>;
+  const out: Record<string, SkillsManifestEntry[]> = {};
+
+  for (const [targetKey, rawEntries] of Object.entries(targetsObj)) {
+    // Stored as an array of entries per target.
+    if (!Array.isArray(rawEntries)) continue;
+    out[targetKey] = normalizeEntries(
+      parseUnifiedEntries({ entries: rawEntries } as unknown),
+    );
+  }
+
+  return out;
+}
+
 function parseLegacyPluginEntries(raw: unknown): PluginSkillsManifestEntry[] {
   if (!raw || typeof raw !== 'object') return [];
   const obj = raw as Record<string, unknown>;
@@ -197,14 +239,17 @@ function parseLegacyClaudeEntries(raw: unknown): ClaudeSkillsManifestEntry[] {
   return entries;
 }
 
-export async function loadSkillsManifestEntries(
+async function loadLegacyTargetSkillsManifestEntries(
   targetSkillsDir: string,
 ): Promise<SkillsManifestEntry[]> {
-  const manifestPath = path.join(targetSkillsDir, SKILLS_MANIFEST_FILENAME);
-  if (await fileExists(manifestPath)) {
+  const legacyManifestPath = path.join(
+    targetSkillsDir,
+    SKILLS_MANIFEST_FILENAME,
+  );
+  if (await fileExists(legacyManifestPath)) {
     try {
       const raw = JSON.parse(
-        await fs.readFile(manifestPath, 'utf8'),
+        await fs.readFile(legacyManifestPath, 'utf8'),
       ) as unknown;
       return normalizeEntries(parseUnifiedEntries(raw));
     } catch {
@@ -264,12 +309,107 @@ export async function loadSkillsManifestEntries(
   return normalizeEntries(merged);
 }
 
+export async function loadSkillsManifestEntries(
+  projectRoot: string,
+  targetSkillsDir: string,
+): Promise<SkillsManifestEntry[]> {
+  const projectClaudeDir = path.join(projectRoot, '.claude');
+  const projectManifestPath = path.join(
+    projectClaudeDir,
+    SKILLS_MANIFEST_FILENAME,
+  );
+
+  const preferredTargetKey = computeTargetKey(projectRoot, targetSkillsDir);
+  const absoluteTargetKey = normalizePathForKey(targetSkillsDir);
+
+  if (await fileExists(projectManifestPath)) {
+    try {
+      const raw = JSON.parse(
+        await fs.readFile(projectManifestPath, 'utf8'),
+      ) as unknown;
+      const targets = parseProjectTargets(raw);
+      const entries =
+        targets[preferredTargetKey] ?? targets[absoluteTargetKey] ?? [];
+      return normalizeEntries(entries);
+    } catch {
+      return [];
+    }
+  }
+
+  // Legacy migration: prior versions stored manifests in the target skills dir.
+  return await loadLegacyTargetSkillsManifestEntries(targetSkillsDir);
+}
+
 export async function writeSkillsManifestEntries(
+  projectRoot: string,
   targetSkillsDir: string,
   entries: SkillsManifestEntry[],
   dryRun: boolean,
 ): Promise<void> {
-  const manifestPath = path.join(targetSkillsDir, SKILLS_MANIFEST_FILENAME);
+  const normalized = normalizeEntries(entries);
+
+  const projectClaudeDir = path.join(projectRoot, '.claude');
+  const projectManifestPath = path.join(
+    projectClaudeDir,
+    SKILLS_MANIFEST_FILENAME,
+  );
+
+  const preferredTargetKey = computeTargetKey(projectRoot, targetSkillsDir);
+  const absoluteTargetKey = normalizePathForKey(targetSkillsDir);
+
+  let existingTargets: Record<string, SkillsManifestEntry[]> = {};
+  if (await fileExists(projectManifestPath)) {
+    try {
+      const raw = JSON.parse(
+        await fs.readFile(projectManifestPath, 'utf8'),
+      ) as unknown;
+      existingTargets = parseProjectTargets(raw);
+    } catch {
+      existingTargets = {};
+    }
+  }
+
+  if (normalized.length === 0) {
+    delete existingTargets[preferredTargetKey];
+    if (preferredTargetKey !== absoluteTargetKey) {
+      delete existingTargets[absoluteTargetKey];
+    }
+  } else {
+    existingTargets[preferredTargetKey] = normalized;
+    if (preferredTargetKey !== absoluteTargetKey) {
+      delete existingTargets[absoluteTargetKey];
+    }
+  }
+
+  if (dryRun) return;
+
+  // Ensure `.claude` exists since the manifest lives there.
+  await fs.mkdir(projectClaudeDir, { recursive: true });
+
+  const targetKeys = Object.keys(existingTargets).sort((a, b) =>
+    a.localeCompare(b),
+  );
+  if (targetKeys.length === 0) {
+    await Promise.allSettled([fs.unlink(projectManifestPath)]);
+  } else {
+    const nextTargets: Record<string, SkillsManifestEntry[]> = {};
+    for (const key of targetKeys) nextTargets[key] = existingTargets[key];
+
+    const manifest: ProjectSkillsManifestFile = {
+      version: SKILLS_MANIFEST_VERSION,
+      targets: nextTargets,
+    };
+    await fs.writeFile(
+      projectManifestPath,
+      JSON.stringify(manifest, null, 2) + '\n',
+    );
+  }
+
+  // Remove legacy per-target manifests so users see a single `.claude/.skiller.json`.
+  const legacyManifestPath = path.join(
+    targetSkillsDir,
+    SKILLS_MANIFEST_FILENAME,
+  );
   const legacyUnifiedPath = path.join(
     targetSkillsDir,
     LEGACY_UNIFIED_SKILLS_MANIFEST_FILENAME,
@@ -282,31 +422,8 @@ export async function writeSkillsManifestEntries(
     targetSkillsDir,
     LEGACY_CLAUDE_MANIFEST_FILENAME,
   );
-
-  const normalized = normalizeEntries(entries);
-
-  if (normalized.length === 0) {
-    if (dryRun) return;
-    await Promise.allSettled([
-      fs.unlink(manifestPath),
-      fs.unlink(legacyUnifiedPath),
-      fs.unlink(legacyPluginPath),
-      fs.unlink(legacyClaudePath),
-    ]);
-    return;
-  }
-
-  const manifest: SkillsManifestFile = {
-    version: SKILLS_MANIFEST_VERSION,
-    entries: normalized,
-  };
-
-  if (dryRun) return;
-
-  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-
-  // Clean up legacy manifests once unified is written.
   await Promise.allSettled([
+    fs.unlink(legacyManifestPath),
     fs.unlink(legacyUnifiedPath),
     fs.unlink(legacyPluginPath),
     fs.unlink(legacyClaudePath),

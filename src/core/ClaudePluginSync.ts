@@ -42,6 +42,12 @@ interface PluginResolvedInstall {
   version?: string;
 }
 
+interface PluginResolvedSource {
+  pluginId: string;
+  pluginRoot: string;
+  version?: string;
+}
+
 interface LegacyMarkerFile {
   pluginId: string;
   pluginVersion?: string;
@@ -82,6 +88,14 @@ async function fileExists(p: string): Promise<boolean> {
   try {
     await fs.access(p);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+async function dirExists(p: string): Promise<boolean> {
+  try {
+    return (await fs.stat(p)).isDirectory();
   } catch {
     return false;
   }
@@ -129,6 +143,52 @@ export async function readInstalledPluginsIndex(
   } catch {
     return null;
   }
+}
+
+function parsePluginId(
+  pluginId: string,
+): { pluginName: string; marketplaceId: string } | null {
+  // `pluginId` format is typically `<pluginName>@<marketplaceId>`.
+  // Split by the last `@` so scoped names like `@org/foo@market` work.
+  const at = pluginId.lastIndexOf('@');
+  if (at <= 0 || at === pluginId.length - 1) return null;
+  return {
+    pluginName: pluginId.slice(0, at),
+    marketplaceId: pluginId.slice(at + 1),
+  };
+}
+
+async function resolvePluginMarketplaceRoot(
+  pluginId: string,
+  claudeDir: string,
+): Promise<string | null> {
+  const parsed = parsePluginId(pluginId);
+  if (!parsed) return null;
+
+  const marketplaceRoot = path.join(
+    claudeDir,
+    'plugins',
+    'marketplaces',
+    parsed.marketplaceId,
+  );
+
+  const candidates = [
+    path.join(marketplaceRoot, 'plugins', parsed.pluginName),
+    path.join(marketplaceRoot, 'external_plugins', parsed.pluginName),
+    path.join(marketplaceRoot, '.claude-plugin', 'plugins', parsed.pluginName),
+    path.join(
+      marketplaceRoot,
+      '.claude-plugin',
+      'external_plugins',
+      parsed.pluginName,
+    ),
+  ];
+
+  for (const candidate of candidates) {
+    if (await dirExists(candidate)) return candidate;
+  }
+
+  return null;
 }
 
 export function resolvePluginInstall(
@@ -252,23 +312,36 @@ export async function discoverPluginSkillDirs(
 
 export async function discoverPluginCommandFiles(
   installPath: string,
-): Promise<Array<{ name: string; file: string }>> {
+): Promise<Array<{ rel: string; file: string }>> {
   const commandsRoot = path.join(installPath, 'commands');
   if (!(await fileExists(commandsRoot))) return [];
 
-  let entries: Dirent[];
-  try {
-    entries = await fs.readdir(commandsRoot, { withFileTypes: true });
-  } catch {
-    return [];
+  const results: Array<{ rel: string; file: string }> = [];
+
+  async function walk(current: string, depth: number): Promise<void> {
+    if (depth >= MAX_RECURSION_DEPTH) return;
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+      const rel = path.relative(commandsRoot, full).replace(/\\/g, '/');
+      results.push({ rel, file: full });
+    }
   }
 
-  return entries
-    .filter((e) => e.isFile() && e.name.endsWith('.md'))
-    .map((e) => ({
-      name: path.basename(e.name, '.md'),
-      file: path.join(commandsRoot, e.name),
-    }));
+  await walk(commandsRoot, 0);
+  return results;
 }
 
 export async function discoverPluginAgentFiles(
@@ -323,15 +396,52 @@ export async function discoverPluginAgentFiles(
 function generateBaseNameFromRelId(relId: string): string {
   const normalized = relId.replace(/\\/g, '/');
   const segments = normalized.split('/').filter(Boolean);
-  return segments.map(sanitizeId).join('__');
+  return segments.map(sanitizeId).join('-');
 }
 
-function generateBaseNameFromCommand(commandName: string): string {
-  return sanitizeId(commandName);
+function generateBaseNameFromCommandRelPath(commandRelPath: string): string {
+  const normalized = commandRelPath.replace(/\\/g, '/');
+  const withoutExt = normalized.endsWith('.md')
+    ? normalized.slice(0, -'.md'.length)
+    : normalized;
+  const segments = withoutExt.split('/').filter(Boolean);
+  return segments.map(sanitizeId).join('-');
 }
 
-function generateNamespacedName(pluginId: string, baseName: string): string {
-  return `${sanitizeId(pluginId)}-${baseName}`;
+function pluginBaseNamespacePrefix(pluginId: string): string {
+  const parsed = parsePluginId(pluginId);
+  if (parsed) return sanitizeId(parsed.pluginName);
+  return sanitizeId(pluginId);
+}
+
+function computePluginNamespacePrefixes(
+  pluginIds: string[],
+): Map<string, string> {
+  const out = new Map<string, string>();
+
+  const pluginIdsByBase = new Map<string, string[]>();
+  for (const pluginId of pluginIds) {
+    const base = pluginBaseNamespacePrefix(pluginId);
+    const bucket = pluginIdsByBase.get(base) ?? [];
+    bucket.push(pluginId);
+    pluginIdsByBase.set(base, bucket);
+  }
+
+  for (const [base, ids] of pluginIdsByBase.entries()) {
+    ids.sort((a, b) => a.localeCompare(b));
+    if (ids.length === 1) {
+      out.set(ids[0], base);
+      continue;
+    }
+
+    // If multiple enabled plugins share the same plugin name, disambiguate
+    // without including the marketplace in the folder name.
+    ids.forEach((id, idx) => {
+      out.set(id, idx === 0 ? base : `${base}-${idx + 1}`);
+    });
+  }
+
+  return out;
 }
 
 async function readLegacyMarkerFile(
@@ -379,13 +489,17 @@ async function removeLegacyMarkerFile(
 }
 
 async function loadManagedEntries(
+  projectRoot: string,
   targetSkillsDir: string,
   dryRun: boolean,
 ): Promise<{
   pluginEntries: ManagedEntry[];
   otherEntries: SkillsManifestEntry[];
 }> {
-  const allEntries = await loadSkillsManifestEntries(targetSkillsDir);
+  const allEntries = await loadSkillsManifestEntries(
+    projectRoot,
+    targetSkillsDir,
+  );
   const pluginEntries: ManagedEntry[] = [];
   const otherEntries: SkillsManifestEntry[] = [];
 
@@ -458,7 +572,13 @@ async function discoverLocalSkillNames(
 
     const hasSkillMd = entries.some((e) => e.isFile() && e.name === 'SKILL.md');
     if (hasSkillMd) {
-      names.add(path.basename(current));
+      const rel = path.relative(localSkillsDir, current).replace(/\\/g, '/');
+      const segments = rel.split('/').filter(Boolean);
+      if (segments.length > 0) {
+        names.add(segments.map(sanitizeId).join('-'));
+      } else {
+        names.add(sanitizeId(path.basename(current)));
+      }
       return;
     }
 
@@ -497,7 +617,12 @@ async function discoverLocalCommandNames(
         continue;
       }
       if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
-      names.add(sanitizeId(path.basename(entry.name, '.md')));
+      const rel = path.relative(localCommandsDir, full).replace(/\\/g, '/');
+      const withoutExt = rel.endsWith('.md')
+        ? rel.slice(0, -'.md'.length)
+        : rel;
+      const segments = withoutExt.split('/').filter(Boolean);
+      names.add(segments.map(sanitizeId).join('-'));
     }
   }
 
@@ -643,86 +768,41 @@ export async function syncClaudePluginsToSkillsDirs(
     ...localAgentNames,
   ]);
 
-  // If we can't read the installed plugins index, we can't install/update
-  // anything, but we can still clean up managed folders for plugins that
-  // are no longer enabled.
-  if (!index) {
-    for (const targetSkillsDir of targetSkillsDirs) {
-      if (!(await fileExists(targetSkillsDir))) continue;
-
-      const { pluginEntries: managedEntries, otherEntries } =
-        await loadManagedEntries(targetSkillsDir, dryRun);
-      const nextEntries: ManagedEntry[] = [];
-
-      // Build reserved set (local skills always win).
-      const reserved = new Set<string>(localReservedNames);
-
-      // Also reserve any existing non-managed directories.
-      const managedDest = new Set<string>(
-        managedEntries.map((e) => e.destRelPath),
-      );
-      let dirents: Dirent[] = [];
-      try {
-        dirents = await fs.readdir(targetSkillsDir, { withFileTypes: true });
-      } catch {
-        // ignore
-      }
-      for (const d of dirents) {
-        if (!d.isDirectory()) continue;
-        if (!managedDest.has(d.name)) {
-          reserved.add(d.name);
-        }
-      }
-
-      for (const entry of managedEntries) {
-        const isEnabled = enabledPlugins.includes(entry.pluginId);
-        if (!isEnabled) {
-          if (reserved.has(entry.destRelPath)) {
-            // Local took over the folder name; stop managing it but don't delete.
-            continue;
-          }
-          logVerboseInfo(
-            dryRun
-              ? `DRY RUN: Would remove stale plugin skill '${entry.destRelPath}' from ${targetSkillsDir}`
-              : `Removing stale plugin skill '${entry.destRelPath}' from ${targetSkillsDir}`,
-            verbose,
-            dryRun,
-          );
-          await removeDir(
-            path.join(targetSkillsDir, entry.destRelPath),
-            dryRun,
-          );
-          continue;
-        }
-        nextEntries.push(entry);
-      }
-
-      await writeSkillsManifestEntries(
-        targetSkillsDir,
-        [...otherEntries, ...nextEntries],
-        dryRun,
-      );
-    }
-    return;
-  }
-
-  const resolvedInstalls: PluginResolvedInstall[] = [];
+  const resolvedSources: PluginResolvedSource[] = [];
   const unresolvedEnabled = new Set<string>();
 
   for (const pluginId of enabledPlugins) {
-    const resolved = resolvePluginInstall(pluginId, projectRoot, index);
-    if (!resolved) {
+    const pluginRoot = await resolvePluginMarketplaceRoot(pluginId, claudeDir);
+    if (!pluginRoot) {
       unresolvedEnabled.add(pluginId);
-      logWarn(`[plugins] Enabled plugin not installed: ${pluginId}`, dryRun);
+      const hasIndexEntry = Boolean(index?.plugins?.[pluginId]?.length);
+      if (hasIndexEntry) {
+        logVerboseInfo(
+          `[plugins] Enabled plugin has no marketplace content, skipping: ${pluginId}`,
+          verbose,
+          dryRun,
+        );
+      } else {
+        logWarn(`[plugins] Enabled plugin not installed: ${pluginId}`, dryRun);
+      }
       continue;
     }
-    resolvedInstalls.push(resolved);
+
+    const resolved = index
+      ? resolvePluginInstall(pluginId, projectRoot, index)
+      : null;
+
+    resolvedSources.push({
+      pluginId,
+      pluginRoot,
+      version: resolved?.version,
+    });
   }
 
   const expectedItems: ExpectedPluginItem[] = [];
 
-  for (const plugin of resolvedInstalls) {
-    const skillDirs = await discoverPluginSkillDirs(plugin.installPath);
+  for (const plugin of resolvedSources) {
+    const skillDirs = await discoverPluginSkillDirs(plugin.pluginRoot);
     for (const s of skillDirs) {
       const baseName = generateBaseNameFromRelId(s.relId);
       const sourceRelPath = `skills/${s.relId}`;
@@ -737,10 +817,10 @@ export async function syncClaudePluginsToSkillsDirs(
       });
     }
 
-    const commandFiles = await discoverPluginCommandFiles(plugin.installPath);
+    const commandFiles = await discoverPluginCommandFiles(plugin.pluginRoot);
     for (const c of commandFiles) {
-      const baseName = generateBaseNameFromCommand(c.name);
-      const sourceRelPath = `commands/${path.basename(c.file)}`;
+      const baseName = generateBaseNameFromCommandRelPath(c.rel);
+      const sourceRelPath = `commands/${c.rel}`;
       expectedItems.push({
         itemKey: makeItemKey(plugin.pluginId, 'command', sourceRelPath),
         pluginId: plugin.pluginId,
@@ -752,7 +832,7 @@ export async function syncClaudePluginsToSkillsDirs(
       });
     }
 
-    const agentFiles = await discoverPluginAgentFiles(plugin.installPath);
+    const agentFiles = await discoverPluginAgentFiles(plugin.pluginRoot);
     for (const a of agentFiles) {
       const baseName = sanitizeId(a.name);
       const sourceRelPath = `agents/${a.rel}`;
@@ -774,6 +854,10 @@ export async function syncClaudePluginsToSkillsDirs(
     return ak.localeCompare(bk);
   });
 
+  const pluginNamespacePrefixByPluginId = computePluginNamespacePrefixes([
+    ...new Set(resolvedSources.map((p) => p.pluginId)),
+  ]);
+
   // Sync into each target skills dir.
   for (const targetSkillsDir of targetSkillsDirs) {
     const targetExists = await fileExists(targetSkillsDir);
@@ -782,7 +866,11 @@ export async function syncClaudePluginsToSkillsDirs(
     let managedEntries: ManagedEntry[] = [];
     let otherEntries: SkillsManifestEntry[] = [];
     if (targetExists) {
-      const loaded = await loadManagedEntries(targetSkillsDir, dryRun);
+      const loaded = await loadManagedEntries(
+        projectRoot,
+        targetSkillsDir,
+        dryRun,
+      );
       managedEntries = loaded.pluginEntries;
       otherEntries = loaded.otherEntries;
     }
@@ -826,10 +914,20 @@ export async function syncClaudePluginsToSkillsDirs(
     for (const item of sortedItems) {
       const prev = prevDestByItemKey.get(item.itemKey);
       if (!prev) continue;
-      // Migration: previous versions used `${pluginId}__${name}`.
-      // Don't preserve legacy namespaced destinations so we can rename to the
-      // new `${pluginId}-${name}` format.
+      const desiredPrefix =
+        pluginNamespacePrefixByPluginId.get(item.pluginId) ??
+        sanitizeId(item.pluginId);
+
+      // Migration: previous versions used `${pluginId}__${name}`, then
+      // `${pluginId}-${name}`. If we changed the namespace prefix (for example
+      // to omit marketplace), don't preserve the old destination so the item
+      // can be renamed.
       if (prev.startsWith(`${sanitizeId(item.pluginId)}__`)) continue;
+      if (
+        prev.startsWith(`${sanitizeId(item.pluginId)}-`) &&
+        desiredPrefix !== sanitizeId(item.pluginId)
+      )
+        continue;
       if (taken.has(prev)) continue;
       assignedDestByItemKey.set(item.itemKey, prev);
       taken.add(prev);
@@ -846,7 +944,7 @@ export async function syncClaudePluginsToSkillsDirs(
         continue;
       }
 
-      const namespacedBase = generateNamespacedName(item.pluginId, base);
+      const namespacedBase = `${pluginNamespacePrefixByPluginId.get(item.pluginId) ?? sanitizeId(item.pluginId)}-${base}`;
       let candidate = namespacedBase;
       let i = 2;
       while (taken.has(candidate)) {
@@ -1001,6 +1099,7 @@ export async function syncClaudePluginsToSkillsDirs(
     }
 
     await writeSkillsManifestEntries(
+      projectRoot,
       targetSkillsDir,
       [...otherEntries, ...nextEntries],
       dryRun,
