@@ -48,6 +48,11 @@ interface PluginResolvedSource {
   version?: string;
 }
 
+interface PluginPackageManifestEntry {
+  name?: string;
+  source?: string;
+}
+
 interface LegacyMarkerFile {
   pluginId: string;
   pluginVersion?: string;
@@ -186,6 +191,74 @@ async function resolvePluginMarketplaceRoot(
 
   for (const candidate of candidates) {
     if (await dirExists(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+async function hasPluginContent(root: string): Promise<boolean> {
+  const candidates = [
+    path.join(root, 'skills'),
+    path.join(root, 'commands'),
+    path.join(root, 'agents'),
+  ];
+
+  for (const candidate of candidates) {
+    if (await dirExists(candidate)) return true;
+  }
+
+  return false;
+}
+
+async function readPluginPackageManifestEntries(
+  installPath: string,
+): Promise<PluginPackageManifestEntry[]> {
+  const packageJsonPath = path.join(installPath, 'package.json');
+
+  try {
+    const raw = JSON.parse(await fs.readFile(packageJsonPath, 'utf8')) as {
+      plugins?: unknown;
+    };
+    if (!Array.isArray(raw.plugins)) return [];
+
+    return raw.plugins.filter(
+      (entry): entry is PluginPackageManifestEntry =>
+        Boolean(entry) && typeof entry === 'object',
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function resolveInstalledPluginSourceRoot(
+  pluginId: string,
+  installPath: string,
+): Promise<string | null> {
+  const manifestEntries = await readPluginPackageManifestEntries(installPath);
+  const parsedPluginId = parsePluginId(pluginId);
+  const matchingEntry =
+    manifestEntries.find(
+      (entry) => entry.name === parsedPluginId?.pluginName,
+    ) ?? (manifestEntries.length === 1 ? manifestEntries[0] : null);
+
+  const rawSource =
+    typeof matchingEntry?.source === 'string' &&
+    matchingEntry.source.trim() !== ''
+      ? matchingEntry.source
+      : '.';
+
+  const sourceRoot = path.resolve(installPath, rawSource);
+  const normalizedInstallPath = path.resolve(installPath);
+  const isWithinInstallPath =
+    sourceRoot === normalizedInstallPath ||
+    sourceRoot.startsWith(normalizedInstallPath + path.sep);
+
+  if (isWithinInstallPath && (await hasPluginContent(sourceRoot))) {
+    return sourceRoot;
+  }
+
+  if (await hasPluginContent(installPath)) {
+    return installPath;
   }
 
   return null;
@@ -772,13 +845,27 @@ export async function syncClaudePluginsToSkillsDirs(
   const unresolvedEnabled = new Set<string>();
 
   for (const pluginId of enabledPlugins) {
-    const pluginRoot = await resolvePluginMarketplaceRoot(pluginId, claudeDir);
+    const resolved = index
+      ? resolvePluginInstall(pluginId, projectRoot, index)
+      : null;
+    const marketplaceRoot = await resolvePluginMarketplaceRoot(
+      pluginId,
+      claudeDir,
+    );
+    const pluginRoot =
+      (marketplaceRoot && (await hasPluginContent(marketplaceRoot))
+        ? marketplaceRoot
+        : null) ??
+      (resolved
+        ? await resolveInstalledPluginSourceRoot(pluginId, resolved.installPath)
+        : null);
+
     if (!pluginRoot) {
       unresolvedEnabled.add(pluginId);
       const hasIndexEntry = Boolean(index?.plugins?.[pluginId]?.length);
       if (hasIndexEntry) {
         logVerboseInfo(
-          `[plugins] Enabled plugin has no marketplace content, skipping: ${pluginId}`,
+          `[plugins] Enabled plugin has no syncable content, skipping: ${pluginId}`,
           verbose,
           dryRun,
         );
@@ -787,10 +874,6 @@ export async function syncClaudePluginsToSkillsDirs(
       }
       continue;
     }
-
-    const resolved = index
-      ? resolvePluginInstall(pluginId, projectRoot, index)
-      : null;
 
     resolvedSources.push({
       pluginId,

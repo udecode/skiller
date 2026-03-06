@@ -175,4 +175,127 @@ Find docs and summarize.
       fs.access(path.join(expectedAgentDir, 'SKILL.md')),
     ).resolves.toBeUndefined();
   });
+
+  it('syncs plugin skills from the installed plugin root when marketplace discovery has no syncable content', async () => {
+    const { projectRoot } = testProject;
+
+    const pluginId = 'planning-with-files@testmarket';
+    const emptyMarketplacePluginPath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'marketplaces',
+      'testmarket',
+      'plugins',
+      'planning-with-files',
+    );
+    const pluginInstallPath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'cache',
+      'testmarket',
+      'planning-with-files',
+      '2.21.0',
+    );
+
+    await fs.mkdir(emptyMarketplacePluginPath, { recursive: true });
+    const pluginSkillDir = path.join(pluginInstallPath, 'skills', 'plan');
+    await fs.mkdir(pluginSkillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(pluginInstallPath, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'planning-with-files',
+          owner: {
+            name: 'Ahmad Othman Ammar Adi',
+            url: 'https://github.com/OthmanAdi',
+          },
+          plugins: [
+            {
+              name: 'planning-with-files',
+              source: './',
+              description:
+                'Manus-style persistent markdown files for planning, progress tracking, and knowledge storage. Now with hooks integration.',
+              version: '2.21.0',
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    await fs.writeFile(
+      path.join(pluginSkillDir, 'SKILL.md'),
+      `---
+name: plan
+description: Persistent planning
+---
+
+Write plans to files.
+`,
+    );
+
+    const indexPath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'installed_plugins.json',
+    );
+    await fs.mkdir(path.dirname(indexPath), { recursive: true });
+    await fs.writeFile(
+      indexPath,
+      JSON.stringify(
+        {
+          version: 2,
+          plugins: {
+            [pluginId]: [
+              {
+                scope: 'project',
+                projectPath: projectRoot,
+                installPath: pluginInstallPath,
+                version: '2.21.0',
+                installedAt: '2026-03-01T00:00:00.000Z',
+                lastUpdated: '2026-03-02T00:00:00.000Z',
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await fs.writeFile(
+      path.join(projectRoot, '.claude', 'settings.json'),
+      JSON.stringify(
+        {
+          enabledPlugins: {
+            [pluginId]: true,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await applyAllAgentConfigs(
+      projectRoot,
+      ['codex'],
+      undefined,
+      false,
+      undefined,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+    );
+
+    await expect(
+      fs.access(path.join(projectRoot, '.codex', 'skills', 'plan', 'SKILL.md')),
+    ).resolves.toBeUndefined();
+  });
 });

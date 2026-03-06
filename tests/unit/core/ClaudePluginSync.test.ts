@@ -509,10 +509,7 @@ Local content.
     expect(parseFrontmatter(localSkillMd).body).toContain('Local content.');
 
     // Plugin command is installed under a namespaced folder instead
-    const pluginDir = path.join(
-      targetSkillsDir,
-      'testplugin-do-thing',
-    );
+    const pluginDir = path.join(targetSkillsDir, 'testplugin-do-thing');
     await expect(
       fs.access(path.join(pluginDir, 'SKILL.md')),
     ).resolves.toBeUndefined();
@@ -659,8 +656,12 @@ Local nested content.
       'compound-engineering',
     );
 
-    await fs.mkdir(path.join(pluginSourcePath1, 'commands'), { recursive: true });
-    await fs.mkdir(path.join(pluginSourcePath2, 'commands'), { recursive: true });
+    await fs.mkdir(path.join(pluginSourcePath1, 'commands'), {
+      recursive: true,
+    });
+    await fs.mkdir(path.join(pluginSourcePath2, 'commands'), {
+      recursive: true,
+    });
 
     await fs.writeFile(
       path.join(pluginSourcePath1, 'commands', 'lfg.md'),
@@ -725,7 +726,9 @@ Manual content.
     });
 
     await expect(
-      fs.access(path.join(targetSkillsDir, 'compound-engineering-lfg', 'SKILL.md')),
+      fs.access(
+        path.join(targetSkillsDir, 'compound-engineering-lfg', 'SKILL.md'),
+      ),
     ).resolves.toBeUndefined();
     await expect(
       fs.access(
@@ -784,5 +787,104 @@ Manual content.
     } finally {
       await fs.rm(otherProjectRoot, { recursive: true, force: true });
     }
+  });
+
+  it('falls back to the installed plugin root when marketplace discovery has no syncable content', async () => {
+    const pluginId = 'planning-with-files@testmarket';
+    const emptyMarketplacePluginPath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'marketplaces',
+      'testmarket',
+      'plugins',
+      'planning-with-files',
+    );
+    const pluginInstallPath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'cache',
+      'testmarket',
+      'planning-with-files',
+      '2.21.0',
+    );
+
+    await fs.mkdir(emptyMarketplacePluginPath, { recursive: true });
+    const pluginSkillDir = path.join(pluginInstallPath, 'skills', 'plan');
+    await fs.mkdir(pluginSkillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(pluginInstallPath, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'planning-with-files',
+          owner: {
+            name: 'Ahmad Othman Ammar Adi',
+            url: 'https://github.com/OthmanAdi',
+          },
+          plugins: [
+            {
+              name: 'planning-with-files',
+              source: './',
+              description:
+                'Manus-style persistent markdown files for planning, progress tracking, and knowledge storage. Now with hooks integration.',
+              version: '2.21.0',
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+    await fs.writeFile(
+      path.join(pluginSkillDir, 'SKILL.md'),
+      `---
+name: plan
+description: Persistent planning
+---
+
+Write plans to files.
+`,
+    );
+
+    await writeInstalledPluginsIndex(pluginId, pluginInstallPath);
+
+    const projectClaudeDir = path.join(tmpDir, '.claude');
+    await fs.mkdir(projectClaudeDir, { recursive: true });
+    await fs.writeFile(
+      path.join(projectClaudeDir, 'settings.json'),
+      JSON.stringify(
+        {
+          enabledPlugins: {
+            [pluginId]: true,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const { syncClaudePluginsToSkillsDirs } = await import(
+      '../../../src/core/ClaudePluginSync'
+    );
+
+    await syncClaudePluginsToSkillsDirs({
+      projectRoot: tmpDir,
+      targetSkillsDirs: [targetSkillsDir],
+      verbose: false,
+      dryRun: false,
+    });
+
+    const installedSkillMd = await fs.readFile(
+      path.join(targetSkillsDir, 'plan', 'SKILL.md'),
+      'utf8',
+    );
+    expect(parseFrontmatter(installedSkillMd).rawFrontmatter?.name).toBe(
+      'plan',
+    );
+    expect(parseFrontmatter(installedSkillMd).body).toContain(
+      'Write plans to files.',
+    );
   });
 });
