@@ -2,14 +2,15 @@ import { IAgentConfig } from './IAgent';
 import * as path from 'path';
 import { promises as fs } from 'fs';
 import { AgentsMdAgent } from './AgentsMdAgent';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 export class QwenCodeAgent extends AgentsMdAgent {
   getIdentifier(): string {
-    return 'qwen';
+    return 'qwen-code';
   }
 
   getName(): string {
-    return 'Qwen Code';
+    return getAgentDisplayName('qwen-code');
   }
 
   async applySkillerConfig(
@@ -55,5 +56,13 @@ export class QwenCodeAgent extends AgentsMdAgent {
 
   supportsMcpRemote(): boolean {
     return true;
+  }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return getAgentSkillsPath('qwen-code', projectRoot);
   }
 }

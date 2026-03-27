@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { AbstractAgent } from './AbstractAgent';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 export class OpenHandsAgent extends AbstractAgent {
   getIdentifier(): string {
@@ -7,7 +8,7 @@ export class OpenHandsAgent extends AbstractAgent {
   }
 
   getName(): string {
-    return 'Open Hands';
+    return getAgentDisplayName('openhands');
   }
 
   getDefaultOutputPath(projectRoot: string): string {
@@ -20,5 +21,13 @@ export class OpenHandsAgent extends AbstractAgent {
 
   supportsMcpRemote(): boolean {
     return true;
+  }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return getAgentSkillsPath('openhands', projectRoot);
   }
 }

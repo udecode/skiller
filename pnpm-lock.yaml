@@ -66,6 +66,9 @@ importers:
       prettier:
         specifier: ^3.6.2
         version: 3.6.2
+      skills:
+        specifier: 1.4.6
+        version: 1.4.6
       ts-jest:
         specifier: ^29.4.5
         version: 29.4.5(@babel/core@7.28.5)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.28.5))(jest-util@29.7.0)(jest@29.7.0(@types/node@24.10.1))(typescript@5.9.3)
@@ -1663,6 +1666,11 @@ packages:
 
   sisteransi@1.0.5:
     resolution: {integrity: sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg==}
+
+  skills@1.4.6:
+    resolution: {integrity: sha512-6YWJl/MgxJxt5Ydqj+TBOtql4aZWrrM7pmOy6NzuXZtLUeepN+c/0A8+QLX3j8IxZwa10mmWp7R63TWhptZLkA==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   slash@3.0.0:
     resolution: {integrity: sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q==}
@@ -3883,6 +3891,8 @@ snapshots:
   signal-exit@4.1.0: {}
 
   sisteransi@1.0.5: {}
+
+  skills@1.4.6: {}
 
   slash@3.0.0: {}
 

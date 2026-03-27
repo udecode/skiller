@@ -6,6 +6,7 @@ import {
   writeGeneratedFile,
   ensureDirExists,
 } from '../core/FileSystemUtils';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * Firebender rule configuration object.
@@ -46,7 +47,7 @@ export class FirebenderAgent implements IAgent {
   }
 
   getName(): string {
-    return 'Firebender';
+    return getAgentDisplayName('firebender');
   }
 
   async applySkillerConfig(
@@ -226,6 +227,14 @@ export class FirebenderAgent implements IAgent {
 
   supportsMcpRemote(): boolean {
     return true;
+  }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return getAgentSkillsPath('firebender', projectRoot);
   }
 
   /**

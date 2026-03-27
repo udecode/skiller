@@ -3,6 +3,7 @@ import * as fs from 'fs/promises';
 import { IAgentConfig } from './IAgent';
 import { AgentsMdAgent } from './AgentsMdAgent';
 import { copySkillsDirectory } from '../core/SkillsUtils';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * Cursor agent adapter.
@@ -15,7 +16,7 @@ export class CursorAgent extends AgentsMdAgent {
   }
 
   getName(): string {
-    return 'Cursor';
+    return getAgentDisplayName('cursor');
   }
 
   async applySkillerConfig(
@@ -75,11 +76,11 @@ export class CursorAgent extends AgentsMdAgent {
   }
 
   supportsNativeSkills(): boolean {
-    // Cursor has native support for rules via .cursor/rules/
+    // Cursor follows the shared project skills convention.
     return true;
   }
 
   getSkillsPath(projectRoot: string): string | null {
-    return path.join(projectRoot, '.cursor/skills');
+    return getAgentSkillsPath('cursor', projectRoot);
   }
 }

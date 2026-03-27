@@ -35,7 +35,7 @@ Cursor merge strategy:
 
 High level (see `docs/mcp.md` for MCP details):
 
-- `default_agents = ["claude", "codex"]`
+- `default_agents = ["claude-code", "codex"]`
 - `nested = true|false`
 - `[rules] include = [...], exclude = [...], merge_strategy = "all"|"cursor"`
 - `[backup] enabled = true|false`

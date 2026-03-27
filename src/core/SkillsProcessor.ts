@@ -13,6 +13,9 @@ import { walkSkillsTree, copySkillsDirectory } from './SkillsUtils';
 import { parseFrontmatter } from './FrontmatterParser';
 import type { IAgent } from '../agents/IAgent';
 
+const LEGACY_CODEX_SKILLS_PATH = path.join('.codex', 'skills');
+const UNIVERSAL_AGENTS_SKILLS_PATH = path.join('.agents', 'skills');
+
 /**
  * For non-Claude agents, compile a wrapper SKILL.md (body is a single @reference)
  * into a standalone SKILL.md with the referenced file's body inlined.
@@ -731,6 +734,62 @@ export async function propagateSkills(
   dryRun: boolean,
   skillerDir?: string,
 ): Promise<void> {
+  async function migrateLegacyCodexSkillsDir(
+    destinationPaths: Set<string>,
+  ): Promise<void> {
+    const universalSkillsDir = path.join(
+      projectRoot,
+      UNIVERSAL_AGENTS_SKILLS_PATH,
+    );
+    const legacyCodexSkillsDir = path.join(
+      projectRoot,
+      LEGACY_CODEX_SKILLS_PATH,
+    );
+
+    if (!destinationPaths.has(universalSkillsDir)) return;
+
+    try {
+      await fs.access(legacyCodexSkillsDir);
+    } catch {
+      return;
+    }
+
+    logVerboseInfo(
+      dryRun
+        ? `DRY RUN: Would migrate legacy Codex skills from ${legacyCodexSkillsDir} to ${universalSkillsDir}`
+        : `Migrating legacy Codex skills from ${legacyCodexSkillsDir} to ${universalSkillsDir}`,
+      verbose,
+      dryRun,
+    );
+
+    if (dryRun) return;
+
+    await fs.mkdir(path.dirname(universalSkillsDir), { recursive: true });
+
+    try {
+      await fs.access(universalSkillsDir);
+      const entries = await fs.readdir(legacyCodexSkillsDir, {
+        withFileTypes: true,
+      });
+
+      for (const entry of entries) {
+        const sourcePath = path.join(legacyCodexSkillsDir, entry.name);
+        const targetPath = path.join(universalSkillsDir, entry.name);
+
+        try {
+          await fs.access(targetPath);
+          await fs.rm(sourcePath, { recursive: true, force: true });
+        } catch {
+          await fs.rename(sourcePath, targetPath);
+        }
+      }
+
+      await fs.rmdir(legacyCodexSkillsDir).catch(() => undefined);
+    } catch {
+      await fs.rename(legacyCodexSkillsDir, universalSkillsDir);
+    }
+  }
+
   if (!skillsEnabled) {
     logVerboseInfo('Skills support disabled', verbose, dryRun);
     return;
@@ -752,6 +811,8 @@ export async function propagateSkills(
       }
     }
   }
+
+  await migrateLegacyCodexSkillsDir(destinationPaths);
 
   // Check if skills directory exists
   let skillsDirExists = true;

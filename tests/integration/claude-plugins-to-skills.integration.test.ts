@@ -30,7 +30,7 @@ enabled = true
     await fs.rm(tmpHome, { recursive: true, force: true });
   });
 
-  it('syncs plugin commands as skills into .codex/skills even when .claude/skills is missing', async () => {
+  it('syncs plugin commands as skills into .agents/skills even when .claude/skills is missing', async () => {
     const { projectRoot } = testProject;
 
     const pluginId = 'testplugin@testmarket';
@@ -156,7 +156,7 @@ Find docs and summarize.
 
     const expectedSkillDir = path.join(
       projectRoot,
-      '.codex',
+      '.agents',
       'skills',
       'do-thing',
     );
@@ -167,7 +167,7 @@ Find docs and summarize.
 
     const expectedAgentDir = path.join(
       projectRoot,
-      '.codex',
+      '.agents',
       'skills',
       'framework-docs-researcher',
     );
@@ -295,7 +295,9 @@ Write plans to files.
     );
 
     await expect(
-      fs.access(path.join(projectRoot, '.codex', 'skills', 'plan', 'SKILL.md')),
+      fs.access(
+        path.join(projectRoot, '.agents', 'skills', 'plan', 'SKILL.md'),
+      ),
     ).resolves.toBeUndefined();
   });
 });

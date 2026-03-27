@@ -37,6 +37,18 @@ describe('FirebenderAgent', () => {
       expect(agent.supportsMcpRemote()).toBe(true);
       expect(agent.getMcpServerKey()).toBe('mcpServers');
     });
+
+    it('supports native skills', () => {
+      const agent = new FirebenderAgent();
+      expect(agent.supportsNativeSkills?.()).toBe(true);
+    });
+
+    it('uses the shared .agents/skills path', () => {
+      const agent = new FirebenderAgent();
+      expect(agent.getSkillsPath?.('/test/project')).toBe(
+        '/test/project/.agents/skills',
+      );
+    });
   });
 
   describe('Rule Processing', () => {

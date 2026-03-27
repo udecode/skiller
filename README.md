@@ -10,7 +10,7 @@ npx skiller@latest apply
 ## Skills
 
 - `.claude/skills/` is the committed source of truth
-- On `apply`, skills are synced to all agents' native skill directories
+- On `apply`, skills are synced to the same project skill directories defined by the sibling `skills` project
 - Claude Code plugins, commands, and agents are also synced as skills to other agents
 - See [docs/skills.md](docs/skills.md)
 
@@ -32,32 +32,25 @@ npx skiller@latest apply
 
 ## Supported agents
 
-| Identifier    | Agent             | Rules                                                    | MCP                            | Skills            |
-| ------------- | ----------------- | -------------------------------------------------------- | ------------------------------ | ----------------- |
-| `agentsmd`    | AgentsMd (pseudo) | `AGENTS.md`                                              | -                              | -                 |
-| `copilot`     | GitHub Copilot    | `AGENTS.md`                                              | `.vscode/mcp.json` (`servers`) | `.claude/skills`  |
-| `claude`      | Claude Code       | `CLAUDE.md` (`@file` refs)                               | `.mcp.json`                    | `.claude/skills`  |
-| `codex`       | OpenAI Codex CLI  | `AGENTS.md`, `.codex/config.toml`                        | `.codex/config.toml`           | `.codex/skills`   |
-| `cursor`      | Cursor            | `AGENTS.md`                                              | `.cursor/mcp.json`             | `.cursor/skills`  |
-| `windsurf`    | Windsurf          | `AGENTS.md`                                              | `.windsurf/mcp_config.json`    | -                 |
-| `cline`       | Cline             | `.clinerules`                                            | -                              | -                 |
-| `aider`       | Aider             | `AGENTS.md`, `.aider.conf.yml`                           | `.mcp.json`                    | -                 |
-| `firebase`    | Firebase Studio   | `.idx/airules.md`                                        | `.idx/mcp.json`                | -                 |
-| `openhands`   | Open Hands        | `.openhands/microagents/repo.md`                         | `config.toml`                  | -                 |
-| `gemini-cli`  | Gemini CLI        | `AGENTS.md`, `.gemini/settings.json`                     | `.gemini/settings.json`        | `.gemini/skills`  |
-| `jules`       | Jules             | `AGENTS.md`                                              | -                              | -                 |
-| `junie`       | Junie             | `.junie/guidelines.md`                                   | -                              | -                 |
-| `augmentcode` | AugmentCode       | `.augment/rules/skiller_augment_instructions.md`         | -                              | -                 |
-| `kilocode`    | Kilo Code         | `.kilocode/rules/skiller_kilocode_instructions.md`       | `.kilocode/mcp.json`           | `.claude/skills`  |
-| `opencode`    | OpenCode          | `AGENTS.md`, `opencode.json`                             | `opencode.json`                | `.opencode/skill` |
-| `goose`       | Goose             | `.goosehints`                                            | -                              | `.agents/skills`  |
-| `crush`       | Crush             | `CRUSH.md`, `.crush.json`                                | `.crush.json`                  | -                 |
-| `amp`         | Amp               | `AGENTS.md`                                              | -                              | `.agents/skills`  |
-| `zed`         | Zed               | `AGENTS.md`, `.zed/settings.json`                        | `.zed/settings.json`           | -                 |
-| `qwen`        | Qwen Code         | `AGENTS.md`, `.qwen/settings.json`                       | `.qwen/settings.json`          | -                 |
-| `kiro`        | Kiro              | `.kiro/steering/skiller_kiro_instructions.md`            | -                              | -                 |
-| `warp`        | Warp              | `WARP.md`                                                | -                              | -                 |
-| `roo`         | RooCode           | `AGENTS.md`, `.roo/mcp.json`                             | `.roo/mcp.json`                | `.roo/skills`     |
-| `trae`        | Trae AI           | `.trae/rules/project_rules.md`                           | -                              | -                 |
-| `amazonqcli`  | Amazon Q CLI      | `.amazonq/rules/skiller_q_rules.md`, `.amazonq/mcp.json` | `.amazonq/mcp.json`            | -                 |
-| `firebender`  | Firebender        | `firebender.json`                                        | `firebender.json`              | -                 |
+| Identifier       | Agent          | Rules                                              | MCP                            | Skills              |
+| ---------------- | -------------- | -------------------------------------------------- | ------------------------------ | ------------------- |
+| `github-copilot` | GitHub Copilot | `AGENTS.md`                                        | `.vscode/mcp.json` (`servers`) | `.agents/skills`    |
+| `claude-code`    | Claude Code    | `CLAUDE.md` (`@file` refs)                         | `.mcp.json`                    | `.claude/skills`    |
+| `codex`          | Codex          | `AGENTS.md`, `.codex/config.toml`                  | `.codex/config.toml`           | `.agents/skills`    |
+| `cursor`         | Cursor         | `AGENTS.md`                                        | `.cursor/mcp.json`             | `.agents/skills`    |
+| `windsurf`       | Windsurf       | `AGENTS.md`                                        | `.windsurf/mcp_config.json`    | `.windsurf/skills`  |
+| `cline`          | Cline          | `.clinerules`                                      | -                              | `.agents/skills`    |
+| `openhands`      | OpenHands      | `.openhands/microagents/repo.md`                   | `config.toml`                  | `.openhands/skills` |
+| `gemini-cli`     | Gemini CLI     | `AGENTS.md`, `.gemini/settings.json`               | `.gemini/settings.json`        | `.agents/skills`    |
+| `junie`          | Junie          | `.junie/guidelines.md`                             | -                              | `.junie/skills`     |
+| `augment`        | Augment        | `.augment/rules/skiller_augment_instructions.md`   | -                              | `.augment/skills`   |
+| `kilo`           | Kilo Code      | `.kilocode/rules/skiller_kilocode_instructions.md` | `.kilocode/mcp.json`           | `.kilocode/skills`  |
+| `opencode`       | OpenCode       | `AGENTS.md`, `opencode.json`                       | `opencode.json`                | `.agents/skills`    |
+| `goose`          | Goose          | `.goosehints`                                      | -                              | `.goose/skills`     |
+| `crush`          | Crush          | `CRUSH.md`, `.crush.json`                          | `.crush.json`                  | `.crush/skills`     |
+| `amp`            | Amp            | `AGENTS.md`                                        | -                              | `.agents/skills`    |
+| `qwen-code`      | Qwen Code      | `AGENTS.md`, `.qwen/settings.json`                 | `.qwen/settings.json`          | `.qwen/skills`      |
+| `kiro-cli`       | Kiro CLI       | `.kiro/steering/skiller_kiro_instructions.md`      | -                              | `.kiro/skills`      |
+| `warp`           | Warp           | `WARP.md`                                          | -                              | `.agents/skills`    |
+| `roo`            | Roo Code       | `AGENTS.md`, `.roo/mcp.json`                       | `.roo/mcp.json`                | `.roo/skills`       |
+| `trae`           | Trae           | `.trae/rules/project_rules.md`                     | -                              | `.trae/skills`      |

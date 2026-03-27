@@ -1,3 +1,3 @@
-default_agents=["copilot"]
-[agents.copilot]
+default_agents=["github-copilot"]
+[agents.github-copilot]
 output_path="AGENTS.md"

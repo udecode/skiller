@@ -1,6 +1,7 @@
 import { IAgent, IAgentConfig } from './IAgent';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 export class CrushAgent implements IAgent {
   getIdentifier(): string {
@@ -8,7 +9,7 @@ export class CrushAgent implements IAgent {
   }
 
   getName(): string {
-    return 'Crush';
+    return getAgentDisplayName('crush');
   }
 
   getDefaultOutputPath(projectRoot: string): Record<string, string> {
@@ -116,5 +117,13 @@ export class CrushAgent implements IAgent {
 
   supportsMcpRemote(): boolean {
     return true;
+  }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return getAgentSkillsPath('crush', projectRoot);
   }
 }

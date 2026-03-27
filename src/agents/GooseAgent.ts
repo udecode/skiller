@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { AbstractAgent } from './AbstractAgent';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * Goose agent adapter for Block's Goose AI assistant.
@@ -11,7 +12,7 @@ export class GooseAgent extends AbstractAgent {
   }
 
   getName(): string {
-    return 'Goose';
+    return getAgentDisplayName('goose');
   }
 
   getDefaultOutputPath(projectRoot: string): string {
@@ -28,6 +29,6 @@ export class GooseAgent extends AbstractAgent {
   }
 
   getSkillsPath(projectRoot: string): string | null {
-    return path.join(projectRoot, '.agents/skills');
+    return getAgentSkillsPath('goose', projectRoot);
   }
 }

@@ -50,7 +50,7 @@ Find docs and summarize.
 `,
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
 
     const { syncClaudeProjectCommandsAndAgentsToSkillsDirs } = await import(
       '../../../src/core/ClaudeProjectSync'
@@ -112,7 +112,11 @@ Find docs and summarize.
 
   it('discovers nested project commands recursively and flattens them to dash-separated names', async () => {
     const projectClaudeDir = path.join(tmpDir, '.claude');
-    const nestedCommandsDir = path.join(projectClaudeDir, 'commands', 'workflows');
+    const nestedCommandsDir = path.join(
+      projectClaudeDir,
+      'commands',
+      'workflows',
+    );
     await fs.mkdir(nestedCommandsDir, { recursive: true });
 
     await fs.writeFile(
@@ -125,7 +129,7 @@ From nested project command.
 `,
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
 
     const { syncClaudeProjectCommandsAndAgentsToSkillsDirs } = await import(
       '../../../src/core/ClaudeProjectSync'
@@ -171,7 +175,7 @@ Do something.
 `,
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
 
     // Simulate an existing manual skill already occupying the name.
     const manualDir = path.join(targetSkillsDir, 'do-thing');
@@ -302,7 +306,7 @@ From plugin.
       ),
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
 
     const { syncClaudeProjectCommandsAndAgentsToSkillsDirs } = await import(
       '../../../src/core/ClaudeProjectSync'
@@ -366,13 +370,7 @@ From project.
     expect(parseFrontmatter(projectInstalled).body).toContain('From project.');
 
     await expect(
-      fs.access(
-        path.join(
-          targetSkillsDir,
-          'testplugin-do-thing',
-          'SKILL.md',
-        ),
-      ),
+      fs.access(path.join(targetSkillsDir, 'testplugin-do-thing', 'SKILL.md')),
     ).resolves.toBeUndefined();
   });
 
@@ -421,7 +419,7 @@ Local nested content.
 `,
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
     const { syncClaudeProjectCommandsAndAgentsToSkillsDirs } = await import(
       '../../../src/core/ClaudeProjectSync'
     );

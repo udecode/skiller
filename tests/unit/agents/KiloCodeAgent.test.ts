@@ -18,7 +18,7 @@ describe('KiloCodeAgent', () => {
   describe('Basic Agent Interface', () => {
     it('returns correct identifier', () => {
       const agent = new KiloCodeAgent();
-      expect(agent.getIdentifier()).toBe('kilocode');
+      expect(agent.getIdentifier()).toBe('kilo');
     });
 
     it('returns correct display name', () => {
@@ -113,10 +113,12 @@ describe('KiloCodeAgent', () => {
       expect(agent.supportsNativeSkills?.()).toBe(true);
     });
 
-    it('should return .claude/skills path (shared with Claude)', () => {
+    it('should return .kilocode/skills path', () => {
       const agent = new KiloCodeAgent();
       const projectRoot = '/test/project';
-      expect(agent.getSkillsPath?.(projectRoot)).toBe('/test/project/.claude/skills');
+      expect(agent.getSkillsPath?.(projectRoot)).toBe(
+        '/test/project/.kilocode/skills',
+      );
     });
   });
 });

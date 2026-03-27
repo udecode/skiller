@@ -5,6 +5,7 @@ import { IAgent, IAgentConfig } from './IAgent';
 import { AgentsMdAgent } from './AgentsMdAgent';
 import { writeGeneratedFile } from '../core/FileSystemUtils';
 import { DEFAULT_RULES_FILENAME } from '../constants';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 interface McpServer {
   command: string;
@@ -34,7 +35,7 @@ export class CodexCliAgent implements IAgent {
   }
 
   getName(): string {
-    return 'OpenAI Codex CLI';
+    return getAgentDisplayName('codex');
   }
 
   async applySkillerConfig(
@@ -164,6 +165,6 @@ export class CodexCliAgent implements IAgent {
   }
 
   getSkillsPath(projectRoot: string): string | null {
-    return path.join(projectRoot, '.codex/skills');
+    return getAgentSkillsPath('codex', projectRoot);
   }
 }

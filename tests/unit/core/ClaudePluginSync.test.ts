@@ -144,7 +144,7 @@ Find docs and summarize.
       ),
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
 
     const { syncClaudePluginsToSkillsDirs } = await import(
       '../../../src/core/ClaudePluginSync'
@@ -306,7 +306,7 @@ Hello from nested plugin skill.
       ),
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
     const { syncClaudePluginsToSkillsDirs } = await import(
       '../../../src/core/ClaudePluginSync'
     );
@@ -392,7 +392,7 @@ From nested plugin command.
       ),
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
     const { syncClaudePluginsToSkillsDirs } = await import(
       '../../../src/core/ClaudePluginSync'
     );
@@ -474,7 +474,7 @@ Do something.
       ),
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
 
     // Simulate an existing local skill already occupying the name.
     const localSkillDir = path.join(targetSkillsDir, 'do-thing');
@@ -573,7 +573,7 @@ Do something.
       ),
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
     const localSkillDir = path.join(targetSkillsDir, 'do-thing');
     await fs.mkdir(localSkillDir, { recursive: true });
     await fs.writeFile(
@@ -710,7 +710,7 @@ Local nested content.
 `,
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
     const { syncClaudePluginsToSkillsDirs } = await import(
       '../../../src/core/ClaudePluginSync'
     );
@@ -804,7 +804,7 @@ From plugin 2.
       ),
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
 
     // Reserve base name so both plugins must use a namespaced folder.
     await fs.mkdir(path.join(targetSkillsDir, 'lfg'), { recursive: true });
@@ -969,7 +969,7 @@ Write plans to files.
       ),
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
     const { syncClaudePluginsToSkillsDirs } = await import(
       '../../../src/core/ClaudePluginSync'
     );

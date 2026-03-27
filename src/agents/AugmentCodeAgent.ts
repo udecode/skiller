@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { IAgent, IAgentConfig } from './IAgent';
 import { backupFile, writeGeneratedFile } from '../core/FileSystemUtils';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * AugmentCode agent adapter.
@@ -8,11 +9,11 @@ import { backupFile, writeGeneratedFile } from '../core/FileSystemUtils';
  */
 export class AugmentCodeAgent implements IAgent {
   getIdentifier(): string {
-    return 'augmentcode';
+    return 'augment';
   }
 
   getName(): string {
-    return 'AugmentCode';
+    return getAgentDisplayName('augment');
   }
 
   async applySkillerConfig(
@@ -49,5 +50,13 @@ export class AugmentCodeAgent implements IAgent {
 
   supportsMcpRemote(): boolean {
     return false;
+  }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return getAgentSkillsPath('augment', projectRoot);
   }
 }

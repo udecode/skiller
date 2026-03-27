@@ -1,133 +1,144 @@
-import { parse as parseTOML } from "@iarna/toml";
-import * as fs from "fs/promises";
-import os from "os";
-import * as path from "path";
+import { parse as parseTOML } from '@iarna/toml';
+import * as fs from 'fs/promises';
+import os from 'os';
+import * as path from 'path';
 
-import { CodexCliAgent } from "../../../src/agents/CodexCliAgent";
+import { CodexCliAgent } from '../../../src/agents/CodexCliAgent';
 
-describe("CodexCliAgent MCP Handling", () => {
-	let tmpDir: string;
-	let mcpJson: Record<string, any>;
+describe('CodexCliAgent MCP Handling', () => {
+  let tmpDir: string;
+  let mcpJson: Record<string, any>;
 
-	beforeEach(async () => {
-		tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-codex-"));
-		// Create MCP JSON object with skiller_server definition
-		mcpJson = {
-			mcpServers: {
-				skiller_server: {
-					command: "npx",
-					args: ["-y", "skiller-mcp"],
-					env: { API_KEY: "test-key" },
-				},
-			},
-		};
-	});
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skiller-codex-'));
+    // Create MCP JSON object with skiller_server definition
+    mcpJson = {
+      mcpServers: {
+        skiller_server: {
+          command: 'npx',
+          args: ['-y', 'skiller-mcp'],
+          env: { API_KEY: 'test-key' },
+        },
+      },
+    };
+  });
 
-	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
-	});
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
 
-	it("merges servers when strategy is merge", async () => {
-		const agent = new CodexCliAgent();
-		// Pre-existing config with native_server
-		const configPath = path.join(tmpDir, ".codex", "config.toml");
-		await fs.mkdir(path.dirname(configPath), { recursive: true });
-		const initialToml = [];
-		initialToml.push("[mcp_servers.native_server]");
-		initialToml.push('command = "npx"');
-		initialToml.push('args = ["-y", "native-mcp"]');
-		initialToml.push('env = { API_KEY = "native-key" }');
-		await fs.writeFile(configPath, initialToml.join("\n") + "\n");
+  it('merges servers when strategy is merge', async () => {
+    const agent = new CodexCliAgent();
+    // Pre-existing config with native_server
+    const configPath = path.join(tmpDir, '.codex', 'config.toml');
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    const initialToml = [];
+    initialToml.push('[mcp_servers.native_server]');
+    initialToml.push('command = "npx"');
+    initialToml.push('args = ["-y", "native-mcp"]');
+    initialToml.push('env = { API_KEY = "native-key" }');
+    await fs.writeFile(configPath, initialToml.join('\n') + '\n');
 
-		await agent.applySkillerConfig("", tmpDir, mcpJson, {
-			mcp: { enabled: true, strategy: "merge" },
-		});
+    await agent.applySkillerConfig('', tmpDir, mcpJson, {
+      mcp: { enabled: true, strategy: 'merge' },
+    });
 
-		const resultStr = await fs.readFile(configPath, "utf8");
-		const result = parseTOML(resultStr) as Record<string, any>;
+    const resultStr = await fs.readFile(configPath, 'utf8');
+    const result = parseTOML(resultStr) as Record<string, any>;
 
-		// Check native server is preserved
-		expect(result.mcp_servers.native_server.command).toBe("npx");
-		expect(result.mcp_servers.native_server.args).toEqual(["-y", "native-mcp"]);
-		expect(result.mcp_servers.native_server.env.API_KEY).toBe("native-key");
+    // Check native server is preserved
+    expect(result.mcp_servers.native_server.command).toBe('npx');
+    expect(result.mcp_servers.native_server.args).toEqual(['-y', 'native-mcp']);
+    expect(result.mcp_servers.native_server.env.API_KEY).toBe('native-key');
 
-		// Check skiller server was added
-		expect(result.mcp_servers.skiller_server.command).toBe("npx");
-		expect(result.mcp_servers.skiller_server.args).toEqual(["-y", "skiller-mcp"]);
-		expect(result.mcp_servers.skiller_server.env.API_KEY).toBe("test-key");
-	});
+    // Check skiller server was added
+    expect(result.mcp_servers.skiller_server.command).toBe('npx');
+    expect(result.mcp_servers.skiller_server.args).toEqual([
+      '-y',
+      'skiller-mcp',
+    ]);
+    expect(result.mcp_servers.skiller_server.env.API_KEY).toBe('test-key');
+  });
 
-	it("overwrites servers when strategy is overwrite", async () => {
-		const agent = new CodexCliAgent();
-		const configPath = path.join(tmpDir, ".codex", "config.toml");
-		await fs.mkdir(path.dirname(configPath), { recursive: true });
-		const initialToml = [
-			"[mcp_servers.native_server]",
-			'command = "npx"',
-			'args = ["-y", "native-mcp"]',
-			'env = { API_KEY = "native-key" }',
-		];
-		await fs.writeFile(configPath, initialToml.join("\n") + "\n");
+  it('overwrites servers when strategy is overwrite', async () => {
+    const agent = new CodexCliAgent();
+    const configPath = path.join(tmpDir, '.codex', 'config.toml');
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    const initialToml = [
+      '[mcp_servers.native_server]',
+      'command = "npx"',
+      'args = ["-y", "native-mcp"]',
+      'env = { API_KEY = "native-key" }',
+    ];
+    await fs.writeFile(configPath, initialToml.join('\n') + '\n');
 
-		await agent.applySkillerConfig("", tmpDir, mcpJson, {
-			mcp: { enabled: true, strategy: "overwrite" },
-		});
+    await agent.applySkillerConfig('', tmpDir, mcpJson, {
+      mcp: { enabled: true, strategy: 'overwrite' },
+    });
 
-		const resultStr = await fs.readFile(configPath, "utf8");
-		const result = parseTOML(resultStr) as Record<string, any>;
+    const resultStr = await fs.readFile(configPath, 'utf8');
+    const result = parseTOML(resultStr) as Record<string, any>;
 
-		expect(result.mcp_servers).not.toHaveProperty("native_server");
-		expect(result.mcp_servers.skiller_server.command).toBe("npx");
-		expect(result.mcp_servers.skiller_server.args).toEqual(["-y", "skiller-mcp"]);
-		expect(result.mcp_servers.skiller_server.env.API_KEY).toBe("test-key");
-	});
+    expect(result.mcp_servers).not.toHaveProperty('native_server');
+    expect(result.mcp_servers.skiller_server.command).toBe('npx');
+    expect(result.mcp_servers.skiller_server.args).toEqual([
+      '-y',
+      'skiller-mcp',
+    ]);
+    expect(result.mcp_servers.skiller_server.env.API_KEY).toBe('test-key');
+  });
 
-	it("creates config.toml at custom path", async () => {
-		const agent = new CodexCliAgent();
-		const custom = path.join(tmpDir, "custom", "codex.toml");
+  it('creates config.toml at custom path', async () => {
+    const agent = new CodexCliAgent();
+    const custom = path.join(tmpDir, 'custom', 'codex.toml');
 
-		// Create the parent directory first
-		await fs.mkdir(path.dirname(custom), { recursive: true });
+    // Create the parent directory first
+    await fs.mkdir(path.dirname(custom), { recursive: true });
 
-		// Apply the configuration with a custom path
-		await agent.applySkillerConfig("", tmpDir, mcpJson, {
-			mcp: { enabled: true },
-			outputPathConfig: custom,
-		});
+    // Apply the configuration with a custom path
+    await agent.applySkillerConfig('', tmpDir, mcpJson, {
+      mcp: { enabled: true },
+      outputPathConfig: custom,
+    });
 
-		// Verify the file was created
-		const exists = await fs.stat(custom);
-		expect(exists.isFile()).toBe(true);
+    // Verify the file was created
+    const exists = await fs.stat(custom);
+    expect(exists.isFile()).toBe(true);
 
-		// Verify the content
-		const content = await fs.readFile(custom, "utf8");
-		const parsed = parseTOML(content);
-		expect(parsed.mcp_servers).toHaveProperty("skiller_server");
-		expect(parsed.mcp_servers.skiller_server.command).toBe("npx");
-		expect(parsed.mcp_servers.skiller_server.args).toEqual(["-y", "skiller-mcp"]);
-		expect(parsed.mcp_servers.skiller_server.env.API_KEY).toBe("test-key");
-	});
+    // Verify the content
+    const content = await fs.readFile(custom, 'utf8');
+    const parsed = parseTOML(content);
+    expect(parsed.mcp_servers).toHaveProperty('skiller_server');
+    expect(parsed.mcp_servers.skiller_server.command).toBe('npx');
+    expect(parsed.mcp_servers.skiller_server.args).toEqual([
+      '-y',
+      'skiller-mcp',
+    ]);
+    expect(parsed.mcp_servers.skiller_server.env.API_KEY).toBe('test-key');
+  });
 
-	it("still writes instructions file alongside config", async () => {
-		const agent = new CodexCliAgent();
-		const instructionsPath = path.join(tmpDir, "AGENTS.md");
-		await agent.applySkillerConfig("instructions", tmpDir, null, {
-			mcp: { enabled: false },
-		});
-		const content = await fs.readFile(instructionsPath, "utf8");
-		expect(content).toBe("<!-- Generated by Skiller -->\ninstructions");
-	});
+  it('still writes instructions file alongside config', async () => {
+    const agent = new CodexCliAgent();
+    const instructionsPath = path.join(tmpDir, 'AGENTS.md');
+    await agent.applySkillerConfig('instructions', tmpDir, null, {
+      mcp: { enabled: false },
+    });
+    const content = await fs.readFile(instructionsPath, 'utf8');
+    expect(content).toBe('<!-- Generated by Skiller -->\ninstructions');
+  });
 });
 
-describe("CodexCliAgent Skills Support", () => {
-	it("should support native skills", () => {
-		const agent = new CodexCliAgent();
-		expect(agent.supportsNativeSkills?.()).toBe(true);
-	});
+describe('CodexCliAgent Skills Support', () => {
+  it('should support native skills', () => {
+    const agent = new CodexCliAgent();
+    expect(agent.supportsNativeSkills?.()).toBe(true);
+  });
 
-	it("should return .codex/skills path", () => {
-		const agent = new CodexCliAgent();
-		const projectRoot = "/test/project";
-		expect(agent.getSkillsPath?.(projectRoot)).toBe("/test/project/.codex/skills");
-	});
+  it('should return .agents/skills path', () => {
+    const agent = new CodexCliAgent();
+    const projectRoot = '/test/project';
+    expect(agent.getSkillsPath?.(projectRoot)).toBe(
+      '/test/project/.agents/skills',
+    );
+  });
 });

@@ -4,20 +4,23 @@ import { IAgent } from '../../../src/agents/IAgent';
 
 // Mock agent implementation for testing
 class MockAgent implements IAgent {
-  constructor(private name: string, private identifier: string) {}
-  
+  constructor(
+    private name: string,
+    private identifier: string,
+  ) {}
+
   getIdentifier(): string {
     return this.identifier;
   }
-  
+
   getName(): string {
     return this.name;
   }
-  
+
   async applySkillerConfig(): Promise<void> {
     // Mock implementation
   }
-  
+
   getDefaultOutputPath(): string {
     return `.${this.identifier}/config.json`;
   }
@@ -25,33 +28,36 @@ class MockAgent implements IAgent {
 
 describe('resolveSelectedAgents', () => {
   const mockAgents = [
-    new MockAgent('Claude Code', 'claude'),
-    new MockAgent('GitHub Copilot', 'copilot'),
+    new MockAgent('Claude Code', 'claude-code'),
+    new MockAgent('GitHub Copilot', 'github-copilot'),
     new MockAgent('Cursor', 'cursor'),
   ];
 
   it('should select agents based on CLI filters', () => {
     const config: LoadedConfig = {
-      cliAgents: ['claude', 'cursor'],
+      cliAgents: ['claude-code', 'cursor'],
       agentConfigs: {},
     };
 
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(2);
-    expect(result.map(a => a.getIdentifier())).toEqual(['claude', 'cursor']);
+    expect(result.map((a) => a.getIdentifier())).toEqual([
+      'claude-code',
+      'cursor',
+    ]);
   });
 
-  it('should select agents based on CLI filters using partial name matches', () => {
+  it('should select agents based on exact canonical CLI filters', () => {
     const config: LoadedConfig = {
-      cliAgents: ['copilot'],
+      cliAgents: ['github-copilot'],
       agentConfigs: {},
     };
 
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(1);
-    expect(result[0].getIdentifier()).toBe('copilot');
+    expect(result[0].getIdentifier()).toBe('github-copilot');
   });
 
   it('should throw error for invalid CLI agent identifiers', () => {
@@ -61,35 +67,35 @@ describe('resolveSelectedAgents', () => {
     };
 
     expect(() => resolveSelectedAgents(config, mockAgents)).toThrow(
-      'Invalid agent specified: invalid-agent'
+      'Invalid agent specified: invalid-agent',
     );
   });
 
   it('should select agents based on default_agents when no CLI filters', () => {
     const config: LoadedConfig = {
-      defaultAgents: ['copilot'],
+      defaultAgents: ['github-copilot'],
       agentConfigs: {},
     };
 
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(1);
-    expect(result[0].getIdentifier()).toBe('copilot');
+    expect(result[0].getIdentifier()).toBe('github-copilot');
   });
 
   it('should respect enabled flag in agent configs when using default_agents', () => {
     const config: LoadedConfig = {
-      defaultAgents: ['claude', 'copilot'],
+      defaultAgents: ['claude-code', 'github-copilot'],
       agentConfigs: {
-        claude: { enabled: false },
-        copilot: { enabled: true },
+        'claude-code': { enabled: false },
+        'github-copilot': { enabled: true },
       },
     };
 
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(1);
-    expect(result[0].getIdentifier()).toBe('copilot');
+    expect(result[0].getIdentifier()).toBe('github-copilot');
   });
 
   it('should throw error for invalid default_agents', () => {
@@ -99,21 +105,24 @@ describe('resolveSelectedAgents', () => {
     };
 
     expect(() => resolveSelectedAgents(config, mockAgents)).toThrow(
-      'Invalid agent specified in default_agents: invalid-default'
+      'Invalid agent specified in default_agents: invalid-default',
     );
   });
 
   it('should select all enabled agents when no filters or defaults', () => {
     const config: LoadedConfig = {
       agentConfigs: {
-        claude: { enabled: false },
+        'claude-code': { enabled: false },
       },
     };
 
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(2);
-    expect(result.map(a => a.getIdentifier()).sort()).toEqual(['copilot', 'cursor']);
+    expect(result.map((a) => a.getIdentifier()).sort()).toEqual([
+      'cursor',
+      'github-copilot',
+    ]);
   });
 
   it('should select all agents when no configuration is provided', () => {
@@ -124,100 +133,104 @@ describe('resolveSelectedAgents', () => {
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(3);
-    expect(result.map(a => a.getIdentifier()).sort()).toEqual(['claude', 'copilot', 'cursor']);
+    expect(result.map((a) => a.getIdentifier()).sort()).toEqual([
+      'claude-code',
+      'cursor',
+      'github-copilot',
+    ]);
   });
 
   it('should handle CLI agents precedence over default_agents', () => {
     const config: LoadedConfig = {
+      cliAgents: ['claude-code'],
+      defaultAgents: ['github-copilot', 'cursor'],
+      agentConfigs: {},
+    };
+
+    const result = resolveSelectedAgents(config, mockAgents);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].getIdentifier()).toBe('claude-code');
+  });
+
+  it('should reject legacy CLI aliases', () => {
+    const config: LoadedConfig = {
       cliAgents: ['claude'],
-      defaultAgents: ['copilot', 'cursor'],
       agentConfigs: {},
     };
 
-    const result = resolveSelectedAgents(config, mockAgents);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].getIdentifier()).toBe('claude');
+    expect(() => resolveSelectedAgents(config, mockAgents)).toThrow(
+      'Invalid agent specified: claude',
+    );
   });
 
-  it('should handle partial name matches in CLI agents', () => {
+  it('should reject legacy default_agents aliases', () => {
     const config: LoadedConfig = {
-      cliAgents: ['code'], // Should match "Claude Code"
+      defaultAgents: ['copilot'],
       agentConfigs: {},
     };
 
-    const result = resolveSelectedAgents(config, mockAgents);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].getIdentifier()).toBe('claude');
-  });
-
-  it('should handle partial name matches in default_agents', () => {
-    const config: LoadedConfig = {
-      defaultAgents: ['code'], // Should match "Claude Code"
-      agentConfigs: {},
-    };
-
-    const result = resolveSelectedAgents(config, mockAgents);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].getIdentifier()).toBe('claude');
+    expect(() => resolveSelectedAgents(config, mockAgents)).toThrow(
+      'Invalid agent specified in default_agents: copilot',
+    );
   });
 
   it('should include agents with explicit enabled=true even when not in default_agents', () => {
     const config: LoadedConfig = {
-      defaultAgents: ['claude'], // Only claude is in defaults
+      defaultAgents: ['claude-code'],
       agentConfigs: {
-        copilot: { enabled: true }, // Explicitly enabled but not in defaults - should be included
-        claude: { enabled: true },  // In defaults and enabled
+        'github-copilot': { enabled: true },
+        'claude-code': { enabled: true },
       },
     };
 
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(2);
-    expect(result.map(a => a.getIdentifier()).sort()).toEqual(['claude', 'copilot']);
+    expect(result.map((a) => a.getIdentifier()).sort()).toEqual([
+      'claude-code',
+      'github-copilot',
+    ]);
   });
 
   it('should exclude agents with explicit enabled=false even when in default_agents', () => {
     const config: LoadedConfig = {
-      defaultAgents: ['claude', 'copilot'], // Both in defaults
+      defaultAgents: ['claude-code', 'github-copilot'],
       agentConfigs: {
-        copilot: { enabled: false }, // Explicitly disabled even though in defaults
+        'github-copilot': { enabled: false },
       },
     };
 
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(1);
-    expect(result[0].getIdentifier()).toBe('claude');
+    expect(result[0].getIdentifier()).toBe('claude-code');
   });
 
   it('should handle explicit disable override in default_agents', () => {
     const config: LoadedConfig = {
-      defaultAgents: ['claude', 'copilot'],
+      defaultAgents: ['claude-code', 'github-copilot'],
       agentConfigs: {
-        claude: { enabled: false }, // Explicitly disabled
-        copilot: { enabled: undefined }, // Should default to included because in default_agents
+        'claude-code': { enabled: false },
+        'github-copilot': { enabled: undefined },
       },
     };
 
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(1);
-    expect(result[0].getIdentifier()).toBe('copilot');
+    expect(result[0].getIdentifier()).toBe('github-copilot');
   });
 
-  it('should handle case insensitive agent matching', () => {
+  it('should reject non-exact casing for CLI agents', () => {
     const config: LoadedConfig = {
-      cliAgents: ['CLAUDE', 'CURSOR'],
+      cliAgents: ['CLAUDE-CODE', 'cursor'],
       agentConfigs: {},
     };
 
-    const result = resolveSelectedAgents(config, mockAgents);
-
-    expect(result).toHaveLength(2);
-    expect(result.map(a => a.getIdentifier())).toEqual(['claude', 'cursor']);
+    expect(() => resolveSelectedAgents(config, mockAgents)).toThrow(
+      'Invalid agent specified: CLAUDE-CODE',
+    );
   });
 
   it('should handle empty CLI agents array', () => {
@@ -229,7 +242,11 @@ describe('resolveSelectedAgents', () => {
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(3);
-    expect(result.map(a => a.getIdentifier()).sort()).toEqual(['claude', 'copilot', 'cursor']);
+    expect(result.map((a) => a.getIdentifier()).sort()).toEqual([
+      'claude-code',
+      'cursor',
+      'github-copilot',
+    ]);
   });
 
   it('should handle empty default agents array', () => {
@@ -241,6 +258,10 @@ describe('resolveSelectedAgents', () => {
     const result = resolveSelectedAgents(config, mockAgents);
 
     expect(result).toHaveLength(3);
-    expect(result.map(a => a.getIdentifier()).sort()).toEqual(['claude', 'copilot', 'cursor']);
+    expect(result.map((a) => a.getIdentifier()).sort()).toEqual([
+      'claude-code',
+      'cursor',
+      'github-copilot',
+    ]);
   });
 });

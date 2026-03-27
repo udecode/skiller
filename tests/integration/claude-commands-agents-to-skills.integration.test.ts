@@ -37,7 +37,7 @@ Find docs and summarize.
     await teardownTestProject(testProject.projectRoot);
   });
 
-  it('syncs .claude/commands + .claude/agents as skills into .codex/skills even when .claude/skills is missing', async () => {
+  it('syncs .claude/commands + .claude/agents as skills into .agents/skills even when .claude/skills is missing', async () => {
     const { projectRoot } = testProject;
 
     // Ensure .claude/skills does NOT exist
@@ -63,14 +63,14 @@ Find docs and summarize.
 
     await expect(
       fs.access(
-        path.join(projectRoot, '.codex', 'skills', 'do-thing', 'SKILL.md'),
+        path.join(projectRoot, '.agents', 'skills', 'do-thing', 'SKILL.md'),
       ),
     ).resolves.toBeUndefined();
     await expect(
       fs.access(
         path.join(
           projectRoot,
-          '.codex',
+          '.agents',
           'skills',
           'framework-docs-researcher',
           'SKILL.md',

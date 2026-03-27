@@ -5,7 +5,7 @@ import { IAgent, IAgentConfig } from '../../../src/agents/IAgent';
 class MockAgent implements IAgent {
   constructor(
     private identifier: string,
-    private name: string
+    private name: string,
   ) {}
 
   getIdentifier(): string {
@@ -31,76 +31,63 @@ describe('config-utils', () => {
 
     beforeEach(() => {
       mockAgents = [
-        new MockAgent('copilot', 'GitHub Copilot'),
-        new MockAgent('claude', 'Claude Code'),
+        new MockAgent('github-copilot', 'GitHub Copilot'),
+        new MockAgent('claude-code', 'Claude Code'),
         new MockAgent('cursor', 'Cursor'),
-        new MockAgent('aider', 'Aider'),
-        new MockAgent('augmentcode', 'AugmentCode'),
+        new MockAgent('augment', 'Augment'),
       ];
     });
 
-    it('should map exact identifier matches (case-insensitive)', () => {
+    it('should map exact canonical identifier matches only', () => {
       const rawConfigs = {
-        copilot: { enabled: true },
-        CLAUDE: { enabled: false },
-        CuRsOr: { outputPath: '/custom/path' },
+        'github-copilot': { enabled: true },
+        'claude-code': { enabled: false },
+        cursor: { outputPath: '/custom/path' },
       };
 
       const result = mapRawAgentConfigs(rawConfigs, mockAgents);
 
       expect(result).toEqual({
-        copilot: { enabled: true },
-        claude: { enabled: false },
+        'github-copilot': { enabled: true },
+        'claude-code': { enabled: false },
         cursor: { outputPath: '/custom/path' },
       });
     });
 
-    it('should map substring matches with display names (case-insensitive)', () => {
+    it('should fail hard on legacy ids and fuzzy matches', () => {
       const rawConfigs = {
-        github: { enabled: true }, // matches "GitHub Copilot"
-        code: { enabled: false },  // matches "Claude Code" and "AugmentCode" 
-        augment: { outputPath: '/path' }, // matches "AugmentCode"
+        copilot: { enabled: true },
+        github: { enabled: false },
+        'CLAUDE-CODE': { outputPath: '/path' },
+      };
+
+      expect(() => mapRawAgentConfigs(rawConfigs, mockAgents)).toThrow(
+        'Invalid agent config section: copilot, github, CLAUDE-CODE',
+      );
+    });
+
+    it('should preserve exact canonical config keys', () => {
+      const rawConfigs = {
+        'github-copilot': { enabled: true },
+        'claude-code': { outputPath: '/claude' },
+        augment: { outputPath: '/augment' },
       };
 
       const result = mapRawAgentConfigs(rawConfigs, mockAgents);
 
-      expect(result).toEqual({
-        copilot: { enabled: true },
-        claude: { enabled: false },
-        augmentcode: { outputPath: '/path' }, // Note: both claude and augmentcode would match 'code', but augmentcode comes later
-      });
+      expect(result).toEqual(rawConfigs);
     });
 
-    it('should handle mixed exact and substring matches', () => {
+    it('should throw when any config key does not match an exact canonical agent id', () => {
       const rawConfigs = {
-        copilot: { enabled: true }, // exact match
-        github: { enabled: false }, // substring match with same agent
-        claude: { outputPath: '/claude' }, // exact match  
-        code: { outputPath: '/code' }, // substring match (different agent)
-      };
-
-      const result = mapRawAgentConfigs(rawConfigs, mockAgents);
-
-      // copilot should get both configs, but the last one wins
-      // claude should get both configs, but the last one wins
-      expect(result.copilot).toBeDefined();
-      expect(result.claude).toBeDefined();
-      expect(Object.keys(result)).toContain('copilot');
-      expect(Object.keys(result)).toContain('claude');
-    });
-
-    it('should ignore keys that do not match any agent', () => {
-      const rawConfigs = {
-        copilot: { enabled: true },
+        'github-copilot': { enabled: true },
         nonexistent: { enabled: false },
         invalid_agent: { outputPath: '/path' },
       };
 
-      const result = mapRawAgentConfigs(rawConfigs, mockAgents);
-
-      expect(result).toEqual({
-        copilot: { enabled: true },
-      });
+      expect(() => mapRawAgentConfigs(rawConfigs, mockAgents)).toThrow(
+        'Invalid agent config section: nonexistent, invalid_agent',
+      );
     });
 
     it('should handle empty raw configs', () => {
@@ -111,79 +98,56 @@ describe('config-utils', () => {
       expect(result).toEqual({});
     });
 
-    it('should handle empty agents array', () => {
+    it('should throw when agents array is empty but config keys are present', () => {
       const rawConfigs = {
-        copilot: { enabled: true },
-        claude: { enabled: false },
+        'github-copilot': { enabled: true },
+        'claude-code': { enabled: false },
       };
 
-      const result = mapRawAgentConfigs(rawConfigs, []);
-
-      expect(result).toEqual({});
+      expect(() => mapRawAgentConfigs(rawConfigs, [])).toThrow(
+        'Invalid agent config section: github-copilot, claude-code',
+      );
     });
 
-    it('should handle case sensitivity properly', () => {
+    it('should reject non-exact casing', () => {
       const rawConfigs = {
-        GITHUB: { enabled: true }, // should match "GitHub Copilot"
-        github: { enabled: false }, // should also match "GitHub Copilot"
-        GitHuB: { outputPath: '/path' }, // should also match "GitHub Copilot"
+        'GITHUB-COPILOT': { enabled: true },
       };
 
-      const result = mapRawAgentConfigs(rawConfigs, mockAgents);
-
-      expect(result.copilot).toBeDefined();
-      expect(Object.keys(result)).toEqual(['copilot']);
-    });
-
-    it('should handle multiple keys mapping to the same agent', () => {
-      const rawConfigs = {
-        copilot: { enabled: true },
-        github: { enabled: false, outputPath: '/github' },
-      };
-
-      const result = mapRawAgentConfigs(rawConfigs, mockAgents);
-
-      // The second match should overwrite the first
-      expect(result.copilot).toEqual({ enabled: false, outputPath: '/github' });
+      expect(() => mapRawAgentConfigs(rawConfigs, mockAgents)).toThrow(
+        'Invalid agent config section: GITHUB-COPILOT',
+      );
     });
 
     it('should preserve all config properties', () => {
       const rawConfigs = {
-        copilot: {
+        'github-copilot': {
           enabled: true,
           outputPath: '/custom/path',
           outputPathInstructions: '/instructions',
           outputPathConfig: '/config',
-          mcp: { enabled: false }
+          mcp: { enabled: false },
         },
       };
 
       const result = mapRawAgentConfigs(rawConfigs, mockAgents);
 
-      expect(result.copilot).toEqual({
+      expect(result['github-copilot']).toEqual({
         enabled: true,
         outputPath: '/custom/path',
         outputPathInstructions: '/instructions',
         outputPathConfig: '/config',
-        mcp: { enabled: false }
+        mcp: { enabled: false },
       });
     });
 
-    it('should handle partial substring matches correctly', () => {
-      const mockAgentWithLongerName = new MockAgent('test', 'Test Agent With Long Name');
-      const agents = [mockAgentWithLongerName];
-      
+    it('should preserve exact keys for arbitrary canonical ids', () => {
+      const agents = [new MockAgent('test-agent', 'Test Agent With Long Name')];
       const rawConfigs = {
-        agent: { enabled: true }, // should match "Test Agent With Long Name"
-        long: { enabled: false }, // should also match
-        name: { outputPath: '/path' }, // should also match
-        xyz: { enabled: true }, // should not match
+        'test-agent': { enabled: true },
       };
 
-      const result = mapRawAgentConfigs(rawConfigs, agents);
-
-      expect(result.test).toBeDefined();
-      expect(Object.keys(result)).toEqual(['test']);
+      expect(mapRawAgentConfigs(rawConfigs, agents)).toEqual(rawConfigs);
     });
   });
 });

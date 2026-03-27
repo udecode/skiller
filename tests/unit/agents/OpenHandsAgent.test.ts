@@ -26,8 +26,21 @@ describe('OpenHandsAgent', () => {
   it('should write instructions to the correct file', async () => {
     const rules = 'Test instructions';
     await agent.applySkillerConfig(rules, tmpDir, null);
-    const outputPath = path.join(tmpDir, '.openhands', 'microagents', 'repo.md');
+    const outputPath = path.join(
+      tmpDir,
+      '.openhands',
+      'microagents',
+      'repo.md',
+    );
     const content = await fs.readFile(outputPath, 'utf8');
     expect(content).toBe(rules);
+  });
+  it('should support native skills', () => {
+    expect(agent.supportsNativeSkills?.()).toBe(true);
+  });
+  it('should return .openhands/skills path', () => {
+    expect(agent.getSkillsPath?.('/test/project')).toBe(
+      '/test/project/.openhands/skills',
+    );
   });
 });

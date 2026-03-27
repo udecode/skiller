@@ -26,7 +26,12 @@ describe('AugmentCodeAgent', () => {
     });
 
     it('returns correct default output path', () => {
-      const expected = path.join(tmpDir, '.augment', 'rules', 'skiller_augment_instructions.md');
+      const expected = path.join(
+        tmpDir,
+        '.augment',
+        'rules',
+        'skiller_augment_instructions.md',
+      );
       expect(agent.getDefaultOutputPath(tmpDir)).toBe(expected);
     });
 
@@ -34,11 +39,26 @@ describe('AugmentCodeAgent', () => {
       expect(agent.supportsMcpStdio()).toBe(false);
       expect(agent.supportsMcpRemote()).toBe(false);
     });
+
+    it('supports native skills', () => {
+      expect(agent.supportsNativeSkills?.()).toBe(true);
+    });
+
+    it('returns .augment/skills path', () => {
+      expect(agent.getSkillsPath?.('/test/project')).toBe(
+        '/test/project/.augment/skills',
+      );
+    });
   });
 
   describe('applySkillerConfig', () => {
     it('creates skiller_augment_instructions.md file', async () => {
-      const target = path.join(tmpDir, '.augment', 'rules', 'skiller_augment_instructions.md');
+      const target = path.join(
+        tmpDir,
+        '.augment',
+        'rules',
+        'skiller_augment_instructions.md',
+      );
       await agent.applySkillerConfig('test guidelines', tmpDir, null);
 
       const content = await fs.readFile(target, 'utf8');
@@ -46,7 +66,12 @@ describe('AugmentCodeAgent', () => {
     });
 
     it('backs up existing skiller_augment_instructions.md file', async () => {
-      const target = path.join(tmpDir, '.augment', 'rules', 'skiller_augment_instructions.md');
+      const target = path.join(
+        tmpDir,
+        '.augment',
+        'rules',
+        'skiller_augment_instructions.md',
+      );
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, 'old guidelines');
 
@@ -60,10 +85,10 @@ describe('AugmentCodeAgent', () => {
 
     it('uses custom output path when provided', async () => {
       const customPath = path.join(tmpDir, 'custom-guidelines.md');
-      await agent.applySkillerConfig('custom guidelines', tmpDir, null, { 
-        outputPath: customPath 
+      await agent.applySkillerConfig('custom guidelines', tmpDir, null, {
+        outputPath: customPath,
       });
-      
+
       const content = await fs.readFile(customPath, 'utf8');
       expect(content).toBe('custom guidelines');
     });
@@ -73,20 +98,25 @@ describe('AugmentCodeAgent', () => {
         mcpServers: {
           filesystem: {
             command: 'npx',
-            args: ['-y', '@modelcontextprotocol/server-filesystem', tmpDir]
-          }
-        }
+            args: ['-y', '@modelcontextprotocol/server-filesystem', tmpDir],
+          },
+        },
       };
 
       await agent.applySkillerConfig('test guidelines', tmpDir, mcpConfig);
 
       // Only the instructions file should be created, no VSCode settings
-      const instructionsPath = path.join(tmpDir, '.augment', 'rules', 'skiller_augment_instructions.md');
+      const instructionsPath = path.join(
+        tmpDir,
+        '.augment',
+        'rules',
+        'skiller_augment_instructions.md',
+      );
       const settingsPath = path.join(tmpDir, '.vscode', 'settings.json');
-      
+
       const instructionsContent = await fs.readFile(instructionsPath, 'utf8');
       expect(instructionsContent).toBe('test guidelines');
-      
+
       // VSCode settings should not be created since AugmentCode doesn't support MCP
       try {
         await fs.access(settingsPath);
@@ -104,31 +134,39 @@ describe('AugmentCodeAgent', () => {
             {
               name: 'existing',
               command: 'existing-command',
-              args: ['existing-arg']
-            }
-          ]
+              args: ['existing-arg'],
+            },
+          ],
         },
         'other.setting': {
-          value: 'preserved'
-        }
+          value: 'preserved',
+        },
       };
 
       await fs.mkdir(path.dirname(settingsPath), { recursive: true });
-      await fs.writeFile(settingsPath, JSON.stringify(existingSettings, null, 4));
+      await fs.writeFile(
+        settingsPath,
+        JSON.stringify(existingSettings, null, 4),
+      );
 
       const newMcpConfig = {
         mcpServers: {
           filesystem: {
             command: 'npx',
-            args: ['-y', '@modelcontextprotocol/server-filesystem', tmpDir]
-          }
-        }
+            args: ['-y', '@modelcontextprotocol/server-filesystem', tmpDir],
+          },
+        },
       };
 
       await agent.applySkillerConfig('test guidelines', tmpDir, newMcpConfig);
 
       // Check that the instructions file was created
-      const instructionsPath = path.join(tmpDir, '.augment', 'rules', 'skiller_augment_instructions.md');
+      const instructionsPath = path.join(
+        tmpDir,
+        '.augment',
+        'rules',
+        'skiller_augment_instructions.md',
+      );
       const instructionsContent = await fs.readFile(instructionsPath, 'utf8');
       expect(instructionsContent).toBe('test guidelines');
 
@@ -145,30 +183,38 @@ describe('AugmentCodeAgent', () => {
           mcpServers: [
             {
               name: 'existing',
-              command: 'existing-command'
-            }
-          ]
-        }
+              command: 'existing-command',
+            },
+          ],
+        },
       };
 
       await fs.mkdir(path.dirname(settingsPath), { recursive: true });
-      await fs.writeFile(settingsPath, JSON.stringify(existingSettings, null, 4));
+      await fs.writeFile(
+        settingsPath,
+        JSON.stringify(existingSettings, null, 4),
+      );
 
       const newMcpConfig = {
         mcpServers: {
           filesystem: {
             command: 'npx',
-            args: ['-y', '@modelcontextprotocol/server-filesystem', tmpDir]
-          }
-        }
+            args: ['-y', '@modelcontextprotocol/server-filesystem', tmpDir],
+          },
+        },
       };
 
       await agent.applySkillerConfig('test guidelines', tmpDir, newMcpConfig, {
-        mcp: { strategy: 'overwrite' }
+        mcp: { strategy: 'overwrite' },
       });
 
       // Check that the instructions file was created
-      const instructionsPath = path.join(tmpDir, '.augment', 'rules', 'skiller_augment_instructions.md');
+      const instructionsPath = path.join(
+        tmpDir,
+        '.augment',
+        'rules',
+        'skiller_augment_instructions.md',
+      );
       const instructionsContent = await fs.readFile(instructionsPath, 'utf8');
       expect(instructionsContent).toBe('test guidelines');
 

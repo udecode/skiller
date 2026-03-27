@@ -56,7 +56,7 @@ description: Test skill
 
     it('should compile @reference SKILL.md and exclude .mdc when copying to other agents', async () => {
       const sourceDir = path.join(tmpDir, '.claude', 'skills');
-      const targetDir = path.join(tmpDir, '.codex', 'skills');
+      const targetDir = path.join(tmpDir, '.agents', 'skills');
       const skillDir = path.join(sourceDir, 'test-skill');
 
       await fs.mkdir(skillDir, { recursive: true });
@@ -257,10 +257,10 @@ This is a test skill.`;
 
       await propagateSkills(tmpDir, agents, true, false, false);
 
-      // Verify skills copied to Codex (Claude/Copilot share same path with source)
+      // Verify skills copied to the shared .agents/skills destination
       const codexSkillPath = path.join(
         tmpDir,
-        '.codex',
+        '.agents',
         'skills',
         'test-skill',
         'SKILL.md',
@@ -279,12 +279,18 @@ This is a test skill.`;
 
       await expect(
         fs.access(
-          path.join(tmpDir, '.codex', 'skills', 'test-skill', 'test-skill.mdc'),
+          path.join(
+            tmpDir,
+            '.agents',
+            'skills',
+            'test-skill',
+            'test-skill.mdc',
+          ),
         ),
       ).rejects.toThrow();
     });
 
-    it('should deduplicate shared paths (Claude/Copilot/Kilo)', async () => {
+    it('should handle shared .agents/skills destinations across multiple agents', async () => {
       const sourceDir = path.join(tmpDir, '.claude', 'skills');
       const skillDir = path.join(sourceDir, 'test-skill');
 
@@ -297,25 +303,22 @@ description: Shared skill
 # Shared Skill`;
       await fs.writeFile(path.join(skillDir, 'SKILL.md'), skillContent);
 
-      const agents = [new ClaudeAgent(), new CopilotAgent()];
+      const agents = [new CodexCliAgent(), new CopilotAgent()];
 
       const { propagateSkills } = await import(
         '../../../src/core/SkillsProcessor'
       );
 
-      // Claude and Copilot share .claude/skills (which is the source), so no copy needed
       await propagateSkills(tmpDir, agents, true, false, false);
 
-      // Verify source still exists (might be converted to @reference by syncMdcToSkillMd)
       const sharedSkillPath = path.join(
         tmpDir,
-        '.claude',
+        '.agents',
         'skills',
         'test-skill',
         'SKILL.md',
       );
       const content = await fs.readFile(sharedSkillPath, 'utf8');
-      // Check for skill metadata (syncMdcToSkillMd may convert body to @reference)
       expect(content).toContain('name: test-skill');
     });
 
@@ -344,6 +347,46 @@ description: Shared skill
         propagateSkills(tmpDir, agents, true, false, false),
       ).resolves.not.toThrow();
     });
+
+    it('should migrate legacy .codex/skills into .agents/skills for Codex', async () => {
+      const sourceDir = path.join(tmpDir, '.claude', 'skills');
+      await fs.mkdir(sourceDir, { recursive: true });
+
+      const legacySkillDir = path.join(
+        tmpDir,
+        '.codex',
+        'skills',
+        'legacy-skill',
+      );
+      await fs.mkdir(legacySkillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(legacySkillDir, 'SKILL.md'),
+        `---
+name: legacy-skill
+description: Legacy Codex skill
+---
+
+Legacy content.
+`,
+      );
+
+      const agents = [new CodexCliAgent()];
+
+      const { propagateSkills } = await import(
+        '../../../src/core/SkillsProcessor'
+      );
+
+      await propagateSkills(tmpDir, agents, true, false, false);
+
+      await expect(
+        fs.access(
+          path.join(tmpDir, '.agents', 'skills', 'legacy-skill', 'SKILL.md'),
+        ),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(path.join(tmpDir, '.codex', 'skills', 'legacy-skill')),
+      ).rejects.toThrow();
+    });
   });
 
   describe('getSkillsGitignorePaths', () => {
@@ -360,8 +403,8 @@ description: Shared skill
 
       const paths = getSkillsGitignorePaths(tmpDir, agents);
 
-      // Should include .codex/skills but NOT .claude/skills (source)
-      expect(paths).toContain('.codex/skills');
+      // Should include .agents/skills but NOT .claude/skills (source)
+      expect(paths).toContain('.agents/skills');
       expect(paths).not.toContain('.claude/skills');
     });
 

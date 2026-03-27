@@ -99,5 +99,16 @@ describe('CursorAgent', () => {
       expect(agent.supportsMcpRemote()).toBe(true);
     });
   });
-});
 
+  describe('Skills Support', () => {
+    it('supports native skills', () => {
+      const agent = new CursorAgent();
+      expect(agent.supportsNativeSkills?.()).toBe(true);
+    });
+
+    it('uses the shared .agents/skills path', () => {
+      const agent = new CursorAgent();
+      expect(agent.getSkillsPath?.('/root')).toBe('/root/.agents/skills');
+    });
+  });
+});

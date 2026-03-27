@@ -1,12 +1,11 @@
 import { IAgent, IAgentConfig } from '../agents/IAgent';
+import { createSkillerError } from '../constants';
 
 /**
  * Maps raw agent configuration keys to their corresponding agent identifiers.
  *
- * This function normalizes configuration keys by matching them against agent identifiers
- * and display names. It performs both exact matching (case-insensitive) with agent
- * identifiers and substring matching (case-insensitive) with agent display names
- * for backwards compatibility.
+ * This function validates that raw configuration keys are already exact canonical
+ * agent identifiers. Any unknown or legacy keys fail hard.
  *
  * @param raw Raw agent configurations with user-provided keys
  * @param agents Array of all available agents
@@ -17,19 +16,25 @@ export function mapRawAgentConfigs(
   agents: IAgent[],
 ): Record<string, IAgentConfig> {
   const mappedConfigs: Record<string, IAgentConfig> = {};
+  const validAgentIdentifiers = new Set(
+    agents.map((agent) => agent.getIdentifier()),
+  );
+  const invalidKeys: string[] = [];
 
   for (const [key, cfg] of Object.entries(raw)) {
-    const lowerKey = key.toLowerCase();
-    for (const agent of agents) {
-      const identifier = agent.getIdentifier();
-      // Exact match with identifier or substring match with display name for backwards compatibility
-      if (
-        identifier === lowerKey ||
-        agent.getName().toLowerCase().includes(lowerKey)
-      ) {
-        mappedConfigs[identifier] = cfg;
-      }
+    if (!validAgentIdentifiers.has(key)) {
+      invalidKeys.push(key);
+      continue;
     }
+
+    mappedConfigs[key] = cfg;
+  }
+
+  if (invalidKeys.length > 0) {
+    throw createSkillerError(
+      `Invalid agent config section: ${invalidKeys.join(', ')}`,
+      `Valid agents are: ${[...validAgentIdentifiers].join(', ')}`,
+    );
   }
 
   return mappedConfigs;

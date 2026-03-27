@@ -20,30 +20,56 @@ describe('JunieAgent', () => {
   });
 
   it('should return the correct default output path', () => {
-    expect(agent.getDefaultOutputPath('/root')).toBe('/root/.junie/guidelines.md');
+    expect(agent.getDefaultOutputPath('/root')).toBe(
+      '/root/.junie/guidelines.md',
+    );
   });
 
   it('should apply skiller config to the default output path', async () => {
     const ensureDirExists = jest.spyOn(FileSystemUtils, 'ensureDirExists');
     const backupFile = jest.spyOn(FileSystemUtils, 'backupFile');
-    const writeGeneratedFile = jest.spyOn(FileSystemUtils, 'writeGeneratedFile');
+    const writeGeneratedFile = jest.spyOn(
+      FileSystemUtils,
+      'writeGeneratedFile',
+    );
 
     await agent.applySkillerConfig('rules', '/root', null);
 
     expect(ensureDirExists).toHaveBeenCalledWith('/root/.junie');
     expect(backupFile).toHaveBeenCalledWith('/root/.junie/guidelines.md');
-    expect(writeGeneratedFile).toHaveBeenCalledWith('/root/.junie/guidelines.md', 'rules');
+    expect(writeGeneratedFile).toHaveBeenCalledWith(
+      '/root/.junie/guidelines.md',
+      'rules',
+    );
   });
 
   it('should apply skiller config to a custom output path', async () => {
     const ensureDirExists = jest.spyOn(FileSystemUtils, 'ensureDirExists');
     const backupFile = jest.spyOn(FileSystemUtils, 'backupFile');
-    const writeGeneratedFile = jest.spyOn(FileSystemUtils, 'writeGeneratedFile');
+    const writeGeneratedFile = jest.spyOn(
+      FileSystemUtils,
+      'writeGeneratedFile',
+    );
 
-    await agent.applySkillerConfig('rules', '/root', null, { outputPath: '/custom/path/guidelines.md' });
+    await agent.applySkillerConfig('rules', '/root', null, {
+      outputPath: '/custom/path/guidelines.md',
+    });
 
     expect(ensureDirExists).toHaveBeenCalledWith('/custom/path');
     expect(backupFile).toHaveBeenCalledWith('/custom/path/guidelines.md');
-    expect(writeGeneratedFile).toHaveBeenCalledWith('/custom/path/guidelines.md', 'rules');
+    expect(writeGeneratedFile).toHaveBeenCalledWith(
+      '/custom/path/guidelines.md',
+      'rules',
+    );
+  });
+
+  it('should support native skills', () => {
+    expect(agent.supportsNativeSkills?.()).toBe(true);
+  });
+
+  it('should return .junie/skills path', () => {
+    expect(agent.getSkillsPath?.('/test/project')).toBe(
+      '/test/project/.junie/skills',
+    );
   });
 });

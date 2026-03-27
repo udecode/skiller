@@ -1,5 +1,5 @@
-import * as path from 'path';
 import { AgentsMdAgent } from './AgentsMdAgent';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 export class AmpAgent extends AgentsMdAgent {
   getIdentifier(): string {
@@ -7,7 +7,7 @@ export class AmpAgent extends AgentsMdAgent {
   }
 
   getName(): string {
-    return 'Amp';
+    return getAgentDisplayName('amp');
   }
 
   supportsNativeSkills(): boolean {
@@ -15,6 +15,6 @@ export class AmpAgent extends AgentsMdAgent {
   }
 
   getSkillsPath(projectRoot: string): string | null {
-    return path.join(projectRoot, '.agents/skills');
+    return getAgentSkillsPath('amp', projectRoot);
   }
 }

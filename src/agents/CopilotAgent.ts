@@ -1,6 +1,6 @@
-import * as path from 'path';
 import { IAgent, IAgentConfig } from './IAgent';
 import { AgentsMdAgent } from './AgentsMdAgent';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * GitHub Copilot agent adapter.
@@ -10,11 +10,11 @@ export class CopilotAgent implements IAgent {
   private agentsMdAgent = new AgentsMdAgent();
 
   getIdentifier(): string {
-    return 'copilot';
+    return 'github-copilot';
   }
 
   getName(): string {
-    return 'GitHub Copilot';
+    return getAgentDisplayName('github-copilot');
   }
 
   /**
@@ -62,6 +62,6 @@ export class CopilotAgent implements IAgent {
   }
 
   getSkillsPath(projectRoot: string): string | null {
-    return path.join(projectRoot, '.claude/skills');
+    return getAgentSkillsPath('github-copilot', projectRoot);
   }
 }

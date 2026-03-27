@@ -16,59 +16,35 @@ export function resolveSelectedAgents(
 ): IAgent[] {
   // CLI --agents > config.default_agents > per-agent.enabled flags > default all
   let selected = allAgents;
+  const validAgentIdentifiers = new Set(
+    allAgents.map((agent) => agent.getIdentifier()),
+  );
+  const validAgentsText = [...validAgentIdentifiers].join(', ');
 
   if (config.cliAgents && config.cliAgents.length > 0) {
-    const filters = config.cliAgents.map((n) => n.toLowerCase());
-
-    // Check if any of the specified agents don't exist
-    const validAgentIdentifiers = new Set(
-      allAgents.map((agent) => agent.getIdentifier()),
-    );
-    const validAgentNames = new Set(
-      allAgents.map((agent) => agent.getName().toLowerCase()),
-    );
-
-    const invalidAgents = filters.filter(
-      (filter) =>
-        !validAgentIdentifiers.has(filter) &&
-        ![...validAgentNames].some((name) => name.includes(filter)),
+    const invalidAgents = config.cliAgents.filter(
+      (agentId) => !validAgentIdentifiers.has(agentId),
     );
 
     if (invalidAgents.length > 0) {
       throw createSkillerError(
         `Invalid agent specified: ${invalidAgents.join(', ')}`,
-        `Valid agents are: ${[...validAgentIdentifiers].join(', ')}`,
+        `Valid agents are: ${validAgentsText}`,
       );
     }
 
     selected = allAgents.filter((agent) =>
-      filters.some(
-        (f) =>
-          agent.getIdentifier() === f ||
-          agent.getName().toLowerCase().includes(f),
-      ),
+      config.cliAgents?.includes(agent.getIdentifier()),
     );
   } else if (config.defaultAgents && config.defaultAgents.length > 0) {
-    const defaults = config.defaultAgents.map((n) => n.toLowerCase());
-
-    // Check if any of the default agents don't exist
-    const validAgentIdentifiers = new Set(
-      allAgents.map((agent) => agent.getIdentifier()),
-    );
-    const validAgentNames = new Set(
-      allAgents.map((agent) => agent.getName().toLowerCase()),
-    );
-
-    const invalidAgents = defaults.filter(
-      (filter) =>
-        !validAgentIdentifiers.has(filter) &&
-        ![...validAgentNames].some((name) => name.includes(filter)),
+    const invalidAgents = config.defaultAgents.filter(
+      (agentId) => !validAgentIdentifiers.has(agentId),
     );
 
     if (invalidAgents.length > 0) {
       throw createSkillerError(
         `Invalid agent specified in default_agents: ${invalidAgents.join(', ')}`,
-        `Valid agents are: ${[...validAgentIdentifiers].join(', ')}`,
+        `Valid agents are: ${validAgentsText}`,
       );
     }
 
@@ -78,9 +54,7 @@ export function resolveSelectedAgents(
       if (override !== undefined) {
         return override;
       }
-      return defaults.some(
-        (d) => identifier === d || agent.getName().toLowerCase().includes(d),
-      );
+      return config.defaultAgents?.includes(identifier) ?? false;
     });
   } else {
     selected = allAgents.filter(

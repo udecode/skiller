@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { AbstractAgent } from './AbstractAgent';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * Warp Agent Mode adapter.
@@ -11,7 +12,7 @@ export class WarpAgent extends AbstractAgent {
   }
 
   getName(): string {
-    return 'Warp';
+    return getAgentDisplayName('warp');
   }
 
   getDefaultOutputPath(projectRoot: string): string {
@@ -25,5 +26,13 @@ export class WarpAgent extends AbstractAgent {
 
   supportsMcpRemote(): boolean {
     return false;
+  }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return getAgentSkillsPath('warp', projectRoot);
   }
 }

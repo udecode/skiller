@@ -6,6 +6,7 @@ import * as fs from 'fs/promises';
 import { ERROR_PREFIX, DEFAULT_RULES_FILENAME } from '../constants';
 import { McpStrategy } from '../types';
 import { loadConfig } from '../core/ConfigLoader';
+import { getAgentIdentifiersForCliHelp } from '../agents';
 
 export interface ApplyArgs {
   'project-root': string;
@@ -154,7 +155,7 @@ export async function initHandler(argv: InitArgs): Promise<void> {
 
 # To specify which agents are active by default when --agents is not used,
 # uncomment and populate the following line. If omitted, all agents are active.
-# default_agents = ["copilot", "claude"]
+# default_agents = ["github-copilot", "claude-code"]
 
 # Enable nested rule loading from nested .claude directories
 # When enabled, skiller will search for and process .claude directories throughout the project hierarchy
@@ -162,16 +163,15 @@ export async function initHandler(argv: InitArgs): Promise<void> {
 
 # --- Agent Specific Configurations ---
 # You can enable/disable agents and override their default output paths here.
-# Use lowercase agent identifiers: amp, copilot, claude, codex, cursor, windsurf, cline, aider, kilocode
+# Use canonical agent identifiers only: ${getAgentIdentifiersForCliHelp()}
 
-# [agents.copilot]
+# [agents.github-copilot]
 # enabled = true
 # output_path = ".github/copilot-instructions.md"
 
-# [agents.aider]
+# [agents.claude-code]
 # enabled = true
-# output_path_instructions = "AGENTS.md"
-# output_path_config = ".aider.conf.yml"
+# output_path = "CLAUDE.md"
 
 # [agents.gemini-cli]
 # enabled = true

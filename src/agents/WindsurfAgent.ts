@@ -1,4 +1,5 @@
 import { AgentsMdAgent } from './AgentsMdAgent';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * Windsurf agent adapter.
@@ -10,7 +11,7 @@ export class WindsurfAgent extends AgentsMdAgent {
   }
 
   getName(): string {
-    return 'Windsurf';
+    return getAgentDisplayName('windsurf');
   }
 
   // Windsurf supports MCP configuration
@@ -24,5 +25,13 @@ export class WindsurfAgent extends AgentsMdAgent {
 
   supportsMcpRemote(): boolean {
     return true;
+  }
+
+  supportsNativeSkills(): boolean {
+    return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return getAgentSkillsPath('windsurf', projectRoot);
   }
 }

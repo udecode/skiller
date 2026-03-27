@@ -2,8 +2,8 @@
 
 Skiller treats `.claude/skills/` as the committed source of truth.
 
-- Claude/Copilot/Kilo Code use `.claude/skills/` directly
-- Other agents get synced copies in their native skills directories
+- Claude uses `.claude/skills/` directly
+- Other agents get synced copies into the same project skill directories defined by the sibling `skills` project
 
 ## Skill layout
 
@@ -31,12 +31,18 @@ Cursor rules inside skills:
 
 On `skiller apply` (when skills are enabled), Skiller copies skills into agent-native skills directories:
 
-- `.codex/skills`
-- `.cursor/skills`
-- `.opencode/skill`
+- `.agents/skills` for agents on the shared project convention such as Codex, GitHub Copilot, Cursor, Gemini CLI, OpenCode, Cline, Warp, Firebender, and Amp
+- `.goose/skills`
+- `.openhands/skills`
+- `.qwen/skills`
+- `.augment/skills`
+- `.junie/skills`
+- `.crush/skills`
+- `.windsurf/skills`
+- `.trae/skills`
+- `.kiro/skills`
+- `.kilocode/skills`
 - `.roo/skills`
-- `.gemini/skills`
-- `.agents/skills`
 
 Propagation rules:
 

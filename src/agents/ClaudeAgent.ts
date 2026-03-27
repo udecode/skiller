@@ -6,6 +6,7 @@ import {
   writeGeneratedFile,
   ensureDirExists,
 } from '../core/FileSystemUtils';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * Claude Code agent adapter.
@@ -13,11 +14,11 @@ import {
  */
 export class ClaudeAgent extends AbstractAgent {
   getIdentifier(): string {
-    return 'claude';
+    return 'claude-code';
   }
 
   getName(): string {
-    return 'Claude Code';
+    return getAgentDisplayName('claude-code');
   }
 
   getDefaultOutputPath(projectRoot: string): string {
@@ -77,5 +78,9 @@ export class ClaudeAgent extends AbstractAgent {
 
   supportsNativeSkills(): boolean {
     return true;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    return getAgentSkillsPath('claude-code', projectRoot);
   }
 }

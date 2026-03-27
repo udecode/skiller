@@ -2,6 +2,7 @@ import { IAgentConfig } from './IAgent';
 import * as path from 'path';
 import { promises as fs } from 'fs';
 import { AgentsMdAgent } from './AgentsMdAgent';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 export class GeminiCliAgent extends AgentsMdAgent {
   getIdentifier(): string {
@@ -9,7 +10,7 @@ export class GeminiCliAgent extends AgentsMdAgent {
   }
 
   getName(): string {
-    return 'Gemini CLI';
+    return getAgentDisplayName('gemini-cli');
   }
 
   async applySkillerConfig(
@@ -86,6 +87,6 @@ export class GeminiCliAgent extends AgentsMdAgent {
   }
 
   getSkillsPath(projectRoot: string): string | null {
-    return path.join(projectRoot, '.gemini/skills');
+    return getAgentSkillsPath('gemini-cli', projectRoot);
   }
 }

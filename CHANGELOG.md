@@ -1,5 +1,25 @@
 # skiller
 
+## 0.8.1
+
+### Major Changes
+
+**Canonical agent catalog hard cut:**
+
+- Vendors a generated snapshot of the sibling `skills` catalog from `skills@1.4.6`
+- Adds `pnpm refresh:skills-catalog` to regenerate that snapshot intentionally instead of doing anything networked during `skiller apply`
+- Uses the vendored catalog as the source of truth for public agent ids, names, and native skills paths
+- Hard-cuts the public surface to canonical ids only: `claude-code`, `github-copilot`, `augment`, `kilo`, `kiro-cli`, `qwen-code`, etc.
+- Removes alias/fuzzy matching in config and CLI agent selection; old ids like `claude`, `copilot`, `augmentcode`, `kilocode`, `kiro`, and `qwen` now fail
+- Drops non-canonical agents from the supported public surface and CLI help (`aider`, `amazonqcli`, `firebase`, `jules`, `zed`, and any other agent not present in the vendored `skills` catalog)
+- Updates init templates and docs to advertise canonical ids only
+
+**Skills path alignment:**
+
+- Moves Codex project skill installs from `.codex/skills` to `.agents/skills`
+- Migrates existing legacy `.codex/skills` content into `.agents/skills` during `apply`
+- Aligns agent-specific native skills paths with the sibling `skills` project instead of maintaining a separate drifting matrix
+
 ## 0.7.20
 
 ### Minor Changes

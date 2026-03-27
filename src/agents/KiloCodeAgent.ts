@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { AbstractAgent } from './AbstractAgent';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * Kilo Code agent adapter.
@@ -7,11 +8,11 @@ import { AbstractAgent } from './AbstractAgent';
  */
 export class KiloCodeAgent extends AbstractAgent {
   getIdentifier(): string {
-    return 'kilocode';
+    return 'kilo';
   }
 
   getName(): string {
-    return 'Kilo Code';
+    return getAgentDisplayName('kilo');
   }
 
   getDefaultOutputPath(projectRoot: string): string {
@@ -40,6 +41,6 @@ export class KiloCodeAgent extends AbstractAgent {
   }
 
   getSkillsPath(projectRoot: string): string | null {
-    return path.join(projectRoot, '.claude/skills');
+    return getAgentSkillsPath('kilo', projectRoot);
   }
 }

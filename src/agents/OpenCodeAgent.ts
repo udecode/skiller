@@ -1,6 +1,7 @@
 import { IAgent, IAgentConfig } from './IAgent';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 export class OpenCodeAgent implements IAgent {
   getIdentifier(): string {
@@ -8,7 +9,7 @@ export class OpenCodeAgent implements IAgent {
   }
 
   getName(): string {
-    return 'OpenCode';
+    return getAgentDisplayName('opencode');
   }
 
   getDefaultOutputPath(projectRoot: string): Record<string, string> {
@@ -85,6 +86,6 @@ export class OpenCodeAgent implements IAgent {
   }
 
   getSkillsPath(projectRoot: string): string | null {
-    return path.join(projectRoot, '.opencode/skill');
+    return getAgentSkillsPath('opencode', projectRoot);
   }
 }

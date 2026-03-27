@@ -4,19 +4,17 @@ import { CodexCliAgent } from '../../../src/agents/CodexCliAgent';
 import { CursorAgent } from '../../../src/agents/CursorAgent';
 import { WindsurfAgent } from '../../../src/agents/WindsurfAgent';
 import { ClineAgent } from '../../../src/agents/ClineAgent';
-import { AiderAgent } from '../../../src/agents/AiderAgent';
 import { KiloCodeAgent } from '../../../src/agents/KiloCodeAgent';
 
 describe('Agent Lowercase Identifiers', () => {
   const expectedIdentifiers = {
-    copilot: CopilotAgent,
-    claude: ClaudeAgent,
+    'github-copilot': CopilotAgent,
+    'claude-code': ClaudeAgent,
     codex: CodexCliAgent,
     cursor: CursorAgent,
     windsurf: WindsurfAgent,
     cline: ClineAgent,
-    aider: AiderAgent,
-    kilocode: KiloCodeAgent,
+    kilo: KiloCodeAgent,
   };
 
   describe('Agent.getIdentifier() returns lowercase identifiers', () => {
@@ -30,20 +28,21 @@ describe('Agent Lowercase Identifiers', () => {
 
   describe('Agent.getName() returns display names', () => {
     const expectedDisplayNames = {
-      copilot: 'GitHub Copilot',
-      claude: 'Claude Code',
-      codex: 'OpenAI Codex CLI',
+      'github-copilot': 'GitHub Copilot',
+      'claude-code': 'Claude Code',
+      codex: 'Codex',
       cursor: 'Cursor',
       windsurf: 'Windsurf',
       cline: 'Cline',
-      aider: 'Aider',
-      kilocode: 'Kilo Code'
+      kilo: 'Kilo Code',
     };
 
     Object.entries(expectedIdentifiers).forEach(([identifier, AgentClass]) => {
       it(`${AgentClass.name} returns "${expectedDisplayNames[identifier as keyof typeof expectedDisplayNames]}"`, () => {
         const agent = new AgentClass();
-        expect(agent.getName()).toBe(expectedDisplayNames[identifier as keyof typeof expectedDisplayNames]);
+        expect(agent.getName()).toBe(
+          expectedDisplayNames[identifier as keyof typeof expectedDisplayNames],
+        );
       });
     });
   });

@@ -5,6 +5,7 @@ import {
   writeGeneratedFile,
   ensureDirExists,
 } from '../core/FileSystemUtils';
+import { getAgentSkillsPath } from './catalog';
 
 /**
  * Abstract base class for agents that write to a single configuration file.
@@ -86,5 +87,13 @@ export abstract class AbstractAgent implements IAgent {
    */
   supportsNativeSkills(): boolean {
     return false;
+  }
+
+  getSkillsPath(projectRoot: string): string | null {
+    if (!this.supportsNativeSkills()) {
+      return null;
+    }
+
+    return getAgentSkillsPath(this.getIdentifier(), projectRoot);
   }
 }

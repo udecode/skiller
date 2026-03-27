@@ -7,6 +7,7 @@ import {
   ensureDirExists,
   writeGeneratedFile,
 } from '../core/FileSystemUtils';
+import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * Agent for RooCode that writes to AGENTS.md and generates .roo/mcp.json
@@ -20,7 +21,7 @@ export class RooCodeAgent implements IAgent {
   }
 
   getName(): string {
-    return 'RooCode';
+    return getAgentDisplayName('roo');
   }
 
   getDefaultOutputPath(projectRoot: string): Record<string, string> {
@@ -140,6 +141,6 @@ export class RooCodeAgent implements IAgent {
   }
 
   getSkillsPath(projectRoot: string): string | null {
-    return path.join(projectRoot, '.roo/skills');
+    return getAgentSkillsPath('roo', projectRoot);
   }
 }
