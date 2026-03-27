@@ -1000,6 +1000,7 @@ export async function syncClaudePluginsToSkillsDirs(
       const desiredPrefix =
         pluginNamespacePrefixByPluginId.get(item.pluginId) ??
         sanitizeId(item.pluginId);
+      const currentNamespacedBase = `${desiredPrefix}-${item.baseName}`;
 
       // Migration: previous versions used `${pluginId}__${name}`, then
       // `${pluginId}-${name}`. If we changed the namespace prefix (for example
@@ -1011,6 +1012,17 @@ export async function syncClaudePluginsToSkillsDirs(
         desiredPrefix !== sanitizeId(item.pluginId)
       )
         continue;
+
+      // If the item was previously namespaced only because its base name was
+      // unavailable, drop that sticky destination once the base name is free.
+      if (
+        (prev === currentNamespacedBase ||
+          prev.startsWith(`${currentNamespacedBase}-`)) &&
+        !taken.has(item.baseName)
+      ) {
+        continue;
+      }
+
       if (taken.has(prev)) continue;
       assignedDestByItemKey.set(item.itemKey, prev);
       taken.add(prev);

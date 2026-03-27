@@ -522,6 +522,111 @@ Local content.
     );
   });
 
+  it('renames previously namespaced plugin items back to base names when the conflict is gone', async () => {
+    const pluginId = 'testplugin@testmarket';
+    const pluginSourcePath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'marketplaces',
+      'testmarket',
+      'plugins',
+      'testplugin',
+    );
+    const pluginCacheInstallPath = path.join(
+      tmpHome,
+      '.claude',
+      'plugins',
+      'cache',
+      'testmarket',
+      'testplugin',
+      '1.0.0',
+    );
+    await fs.mkdir(pluginSourcePath, { recursive: true });
+
+    const pluginCommandsDir = path.join(pluginSourcePath, 'commands');
+    await fs.mkdir(pluginCommandsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(pluginCommandsDir, 'do-thing.md'),
+      `---
+description: Do the thing
+---
+
+Do something.
+`,
+    );
+
+    await writeInstalledPluginsIndex(pluginId, pluginCacheInstallPath);
+
+    const projectClaudeDir = path.join(tmpDir, '.claude');
+    await fs.mkdir(projectClaudeDir, { recursive: true });
+    await fs.writeFile(
+      path.join(projectClaudeDir, 'settings.json'),
+      JSON.stringify(
+        {
+          enabledPlugins: {
+            [pluginId]: true,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const targetSkillsDir = path.join(tmpDir, '.codex', 'skills');
+    const localSkillDir = path.join(targetSkillsDir, 'do-thing');
+    await fs.mkdir(localSkillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(localSkillDir, 'SKILL.md'),
+      `---
+name: do-thing
+description: Local skill wins
+---
+
+Local content.
+`,
+    );
+
+    const { syncClaudePluginsToSkillsDirs } = await import(
+      '../../../src/core/ClaudePluginSync'
+    );
+
+    await syncClaudePluginsToSkillsDirs({
+      projectRoot: tmpDir,
+      targetSkillsDirs: [targetSkillsDir],
+      verbose: false,
+      dryRun: false,
+    });
+
+    await expect(
+      fs.access(path.join(targetSkillsDir, 'testplugin-do-thing', 'SKILL.md')),
+    ).resolves.toBeUndefined();
+
+    await fs.rm(localSkillDir, { recursive: true, force: true });
+
+    await syncClaudePluginsToSkillsDirs({
+      projectRoot: tmpDir,
+      targetSkillsDirs: [targetSkillsDir],
+      verbose: false,
+      dryRun: false,
+    });
+
+    await expect(
+      fs.access(path.join(targetSkillsDir, 'do-thing', 'SKILL.md')),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(targetSkillsDir, 'testplugin-do-thing')),
+    ).rejects.toThrow();
+
+    const pluginSkillMd = await fs.readFile(
+      path.join(targetSkillsDir, 'do-thing', 'SKILL.md'),
+      'utf8',
+    );
+    expect(parseFrontmatter(pluginSkillMd).rawFrontmatter?.name).toBe(
+      'do-thing',
+    );
+  });
+
   it('treats nested local .claude/skills as flattened names when reserving against plugin items', async () => {
     const pluginId = 'testplugin@testmarket';
     const pluginSourcePath = path.join(
