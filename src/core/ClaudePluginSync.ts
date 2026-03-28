@@ -1023,6 +1023,14 @@ export async function syncClaudePluginsToSkillsDirs(
         continue;
       }
 
+      if (
+        reserved.has(item.baseName) &&
+        (prev === currentNamespacedBase ||
+          prev.startsWith(`${currentNamespacedBase}-`))
+      ) {
+        continue;
+      }
+
       if (taken.has(prev)) continue;
       assignedDestByItemKey.set(item.itemKey, prev);
       taken.add(prev);
@@ -1039,6 +1047,10 @@ export async function syncClaudePluginsToSkillsDirs(
         continue;
       }
 
+      if (reserved.has(base)) {
+        continue;
+      }
+
       const namespacedBase = `${pluginNamespacePrefixByPluginId.get(item.pluginId) ?? sanitizeId(item.pluginId)}-${base}`;
       let candidate = namespacedBase;
       let i = 2;
@@ -1049,10 +1061,13 @@ export async function syncClaudePluginsToSkillsDirs(
       taken.add(candidate);
     }
 
-    const assignedItems = sortedItems.map((item) => ({
-      ...item,
-      destRelPath: assignedDestByItemKey.get(item.itemKey) as string,
-    }));
+    const assignedItems = sortedItems.flatMap((item) => {
+      const destRelPath = assignedDestByItemKey.get(item.itemKey);
+
+      if (!destRelPath) return [];
+
+      return [{ ...item, destRelPath }];
+    });
 
     // Install/update expected items
     if (assignedItems.length > 0) {

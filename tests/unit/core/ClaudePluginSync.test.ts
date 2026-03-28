@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { parseFrontmatter } from '../../../src/core/FrontmatterParser';
+import { writeSkillsManifestEntries } from '../../../src/core/SkillsManifest';
 
 describe('Claude Plugin Skill Sync', () => {
   let tmpDir: string;
@@ -421,7 +422,7 @@ From nested plugin command.
     ).rejects.toThrow();
   });
 
-  it('namespaces plugin items only when they conflict with an existing (local) skill', async () => {
+  it('skips plugin items when they conflict with an existing local skill', async () => {
     const pluginId = 'testplugin@testmarket';
     const pluginSourcePath = path.join(
       tmpHome,
@@ -508,21 +509,12 @@ Local content.
     );
     expect(parseFrontmatter(localSkillMd).body).toContain('Local content.');
 
-    // Plugin command is installed under a namespaced folder instead
-    const pluginDir = path.join(targetSkillsDir, 'testplugin-do-thing');
     await expect(
-      fs.access(path.join(pluginDir, 'SKILL.md')),
-    ).resolves.toBeUndefined();
-    const pluginSkillMd = await fs.readFile(
-      path.join(pluginDir, 'SKILL.md'),
-      'utf8',
-    );
-    expect(parseFrontmatter(pluginSkillMd).rawFrontmatter?.name).toBe(
-      'testplugin-do-thing',
-    );
+      fs.access(path.join(targetSkillsDir, 'testplugin-do-thing')),
+    ).rejects.toThrow();
   });
 
-  it('renames previously namespaced plugin items back to base names when the conflict is gone', async () => {
+  it('cleans up stale namespaced plugin items and restores the base name when the local conflict is gone', async () => {
     const pluginId = 'testplugin@testmarket';
     const pluginSourcePath = path.join(
       tmpHome,
@@ -591,6 +583,34 @@ Local content.
       '../../../src/core/ClaudePluginSync'
     );
 
+    const stalePluginDir = path.join(targetSkillsDir, 'testplugin-do-thing');
+    await fs.mkdir(stalePluginDir, { recursive: true });
+    await fs.writeFile(
+      path.join(stalePluginDir, 'SKILL.md'),
+      `---
+name: testplugin-do-thing
+description: Stale plugin copy
+---
+
+Old content.
+`,
+    );
+    await writeSkillsManifestEntries(
+      tmpDir,
+      targetSkillsDir,
+      [
+        {
+          sourceType: 'plugin',
+          pluginId,
+          pluginVersion: '1.0.0',
+          sourceKind: 'command',
+          sourceRelPath: 'commands/do-thing.md',
+          destRelPath: 'testplugin-do-thing',
+        },
+      ],
+      false,
+    );
+
     await syncClaudePluginsToSkillsDirs({
       projectRoot: tmpDir,
       targetSkillsDirs: [targetSkillsDir],
@@ -599,8 +619,8 @@ Local content.
     });
 
     await expect(
-      fs.access(path.join(targetSkillsDir, 'testplugin-do-thing', 'SKILL.md')),
-    ).resolves.toBeUndefined();
+      fs.access(path.join(targetSkillsDir, 'testplugin-do-thing')),
+    ).rejects.toThrow();
 
     await fs.rm(localSkillDir, { recursive: true, force: true });
 
@@ -727,14 +747,12 @@ Local nested content.
       fs.access(path.join(targetSkillsDir, 'lfg', 'SKILL.md')),
     ).resolves.toBeUndefined();
 
-    // Plugin 'workflows-lfg' conflicts with local nested (flattened) name, so it must be namespaced
-    await expect(
-      fs.access(
-        path.join(targetSkillsDir, 'testplugin-workflows-lfg', 'SKILL.md'),
-      ),
-    ).resolves.toBeUndefined();
+    // Plugin 'workflows-lfg' conflicts with local nested (flattened) name, so it is skipped
     await expect(
       fs.access(path.join(targetSkillsDir, 'workflows-lfg')),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(targetSkillsDir, 'testplugin-workflows-lfg')),
     ).rejects.toThrow();
   });
 
@@ -806,19 +824,6 @@ From plugin 2.
 
     const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
 
-    // Reserve base name so both plugins must use a namespaced folder.
-    await fs.mkdir(path.join(targetSkillsDir, 'lfg'), { recursive: true });
-    await fs.writeFile(
-      path.join(targetSkillsDir, 'lfg', 'SKILL.md'),
-      `---
-name: lfg
-description: Manual wins
----
-
-Manual content.
-`,
-    );
-
     const { syncClaudePluginsToSkillsDirs } = await import(
       '../../../src/core/ClaudePluginSync'
     );
@@ -831,15 +836,18 @@ Manual content.
     });
 
     await expect(
-      fs.access(
-        path.join(targetSkillsDir, 'compound-engineering-lfg', 'SKILL.md'),
-      ),
+      fs.access(path.join(targetSkillsDir, 'lfg', 'SKILL.md')),
     ).resolves.toBeUndefined();
     await expect(
       fs.access(
         path.join(targetSkillsDir, 'compound-engineering-2-lfg', 'SKILL.md'),
       ),
     ).resolves.toBeUndefined();
+    await expect(
+      fs.access(
+        path.join(targetSkillsDir, 'compound-engineering-lfg'),
+      ),
+    ).rejects.toThrow();
 
     await expect(
       fs.access(
