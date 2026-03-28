@@ -1,5 +1,16 @@
 # skiller
 
+## 0.9.0
+
+### Minor Changes
+
+- [`751c83f`](https://github.com/udecode/skiller/commit/751c83ff6bc242b61f5181dcc05137a11b987f0c) Thanks [@zbeyens](https://github.com/zbeyens)! - Multi-agent skills propagation
+
+### Patch Changes
+
+- [`b06bc99`](https://github.com/udecode/skiller/commit/b06bc994ebd46ab7b8b2eeecb92d0213f2d49f10) - - Compile wrapper `SKILL.md` files when propagating skills to non-Claude agents.
+  - Do not copy `.mdc` skill source files to agent skill directories.
+
 ## 0.8.1
 
 ### Major Changes
