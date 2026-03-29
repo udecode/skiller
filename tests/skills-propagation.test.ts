@@ -114,6 +114,78 @@ Use this well.`,
     expect(manifest.localSkills).toEqual(['local-skill']);
   });
 
+  it('prunes stale localSkills entries when their .mdc sources were deleted', async () => {
+    const rulesDir = path.join(tmpDir, '.agents', 'rules');
+    const upstreamSkillDir = path.join(tmpDir, '.agents', 'skills', 'find-skills');
+    await fs.mkdir(rulesDir, { recursive: true });
+    await fs.mkdir(upstreamSkillDir, { recursive: true });
+
+    await fs.writeFile(
+      path.join(rulesDir, 'local-skill.mdc'),
+      `---
+description: Local skill
+---
+
+# Local Skill`,
+    );
+
+    await fs.writeFile(
+      path.join(upstreamSkillDir, 'SKILL.md'),
+      `---
+name: find-skills
+description: Upstream installed skill
+---
+
+# Find Skills`,
+    );
+
+    await fs.writeFile(
+      path.join(tmpDir, 'skills-lock.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          skills: {
+            'find-skills': {
+              source: 'vercel-labs/skills',
+              sourceType: 'github',
+              computedHash: 'abc',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await fs.writeFile(
+      path.join(tmpDir, '.agents', '.skiller.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          targets: {},
+          localSkills: ['find-skills'],
+        },
+        null,
+        2,
+      ),
+    );
+
+    await propagateSkills(
+      tmpDir,
+      [new ClaudeAgent(), new CodexCliAgent()],
+      true,
+      false,
+      false,
+      path.join(tmpDir, '.agents'),
+    );
+
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(tmpDir, '.agents', '.skiller.json'), 'utf8'),
+    ) as { localSkills: string[] };
+
+    expect(manifest.localSkills).toEqual(['local-skill']);
+  });
+
   it('inlines embedded reference directives when compiling local rules', async () => {
     const rulesDir = path.join(tmpDir, '.agents', 'rules');
     const ruleRefsDir = path.join(rulesDir, 'references');

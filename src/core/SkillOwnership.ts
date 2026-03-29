@@ -470,6 +470,33 @@ export async function adoptSkillerOwnedSkillNames(
   await writeLocalSkillNames(projectRoot, [...next], dryRun);
 }
 
+export async function syncSkillerOwnedSkillNamesFromRules(
+  projectRoot: string,
+  dryRun: boolean,
+): Promise<string[]> {
+  const rulesDir = path.join(projectRoot, CANONICAL_SKILLER_DIR, 'rules');
+  let ruleNames: string[] = [];
+
+  try {
+    const entries = await fs.readdir(rulesDir, { withFileTypes: true });
+    ruleNames = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.mdc'))
+      .map((entry) => path.basename(entry.name, '.mdc'))
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    ruleNames = [];
+  }
+
+  const upstreamOwned = await readUpstreamOwnedSkillNames(projectRoot);
+  const nextLocalSkillNames = ruleNames.filter((name) => {
+    return !upstreamOwned.has(name);
+  });
+
+  await writeLocalSkillNames(projectRoot, nextLocalSkillNames, dryRun);
+
+  return nextLocalSkillNames;
+}
+
 export async function migrateLegacyProjectState(
   projectRoot: string,
   dryRun: boolean,

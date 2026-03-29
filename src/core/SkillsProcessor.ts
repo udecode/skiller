@@ -15,6 +15,7 @@ import type { IAgent } from '../agents/IAgent';
 import {
   adoptSkillerOwnedSkillNames,
   resolveSkillOwnership,
+  syncSkillerOwnedSkillNamesFromRules,
 } from './SkillOwnership';
 
 const LEGACY_CODEX_SKILLS_PATH = path.join('.codex', 'skills');
@@ -1226,6 +1227,8 @@ export async function propagateSkills(
     for (const warning of compileResult.warnings) {
       logWarn(warning, dryRun);
     }
+
+    await syncSkillerOwnedSkillNamesFromRules(projectRoot, dryRun);
   }
 
   // Determine canonical skills directory, with legacy fallback for migration.

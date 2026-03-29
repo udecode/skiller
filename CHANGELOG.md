@@ -1,5 +1,15 @@
 # skiller
 
+## 0.9.1
+
+### Patch Changes
+
+**Local manifest cleanup now follows reality:**
+
+- Prunes stale `.agents/.skiller.json` `localSkills` entries when the corresponding `.agents/rules/*.mdc` source was deleted
+- Stops `apply` from preserving fake local ownership after a rule was removed and the skill is now upstream-installed
+- Fixes a manifest deletion bug where `.agents/.skiller.json` could be removed even when `localSkills` still existed but `targets` was empty
+
 ## 0.9.0
 
 ### Major Changes

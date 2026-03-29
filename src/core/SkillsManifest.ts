@@ -488,7 +488,7 @@ export async function writeSkillsManifestEntries(
   const targetKeys = Object.keys(existingTargets).sort((a, b) =>
     a.localeCompare(b),
   );
-  if (targetKeys.length === 0) {
+  if (targetKeys.length === 0 && existingLocalSkills.length === 0) {
     await Promise.allSettled([fs.unlink(projectManifestPath)]);
   } else {
     const nextTargets: Record<string, SkillsManifestEntry[]> = {};
