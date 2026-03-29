@@ -38,6 +38,48 @@ function skillsArgsBuilder(y: Argv) {
     });
 }
 
+function migrateClaudePluginsArgsBuilder(y: Argv) {
+  return y
+    .option('project-root', {
+      type: 'string',
+      description: 'Project root directory',
+      default: process.cwd(),
+    })
+    .option('execute', {
+      type: 'boolean',
+      description:
+        'Actually install the resolved repos through the local skills CLI',
+      default: false,
+    });
+}
+
+function migrateRulesToSkillsArgsBuilder(y: Argv) {
+  return y
+    .option('project-root', {
+      type: 'string',
+      description: 'Project root directory',
+      default: process.cwd(),
+    })
+    .option('execute', {
+      type: 'boolean',
+      description:
+        'Actually replace selected local rules after detection',
+      default: false,
+    })
+    .option('yes', {
+      type: 'boolean',
+      description:
+        'Auto-replace only unambiguous exact matches without prompting',
+      default: false,
+    })
+    .positional('rules', {
+      type: 'string',
+      array: true,
+      description:
+        'Specific rule names or .mdc files to check (default: all .agents/rules/*.mdc)',
+    });
+}
+
 /**
  * Sets up and parses CLI commands.
  */
@@ -188,55 +230,27 @@ export async function run(): Promise<void> {
       },
       initHandler,
     )
-    .command<MigrateClaudePluginsArgs>(
-      'migrate claude-plugins',
-      'Plan or execute a one-shot migration from legacy Claude plugins to skills installs',
+    .command(
+      'migrate',
+      'Migration utilities',
       (y: Argv) => {
         return y
-          .option('project-root', {
-            type: 'string',
-            description: 'Project root directory',
-            default: process.cwd(),
-          })
-          .option('execute', {
-            type: 'boolean',
-            description:
-              'Actually install the resolved repos through the local skills CLI',
-            default: false,
-          });
+          .command<MigrateClaudePluginsArgs>(
+            'claude-plugins',
+            'Plan or execute a one-shot migration from legacy Claude plugins to skills installs',
+            migrateClaudePluginsArgsBuilder,
+            migrateClaudePluginsHandler,
+          )
+          .command<MigrateRulesToSkillsArgs>(
+            'rules-to-skills [rules..]',
+            'Detect local .agents/rules .mdc files that already exist on skills.sh and optionally replace them',
+            migrateRulesToSkillsArgsBuilder,
+            migrateRulesToSkillsHandler,
+          )
+          .demandCommand(1, 'You need to specify a migrate subcommand')
+          .strict();
       },
-      migrateClaudePluginsHandler,
-    )
-    .command<MigrateRulesToSkillsArgs>(
-      'migrate rules-to-skills [rules..]',
-      'Detect local .agents/rules .mdc files that already exist on skills.sh and optionally replace them',
-      (y: Argv) => {
-        return y
-          .option('project-root', {
-            type: 'string',
-            description: 'Project root directory',
-            default: process.cwd(),
-          })
-          .option('execute', {
-            type: 'boolean',
-            description:
-              'Actually replace selected local rules after detection',
-            default: false,
-          })
-          .option('yes', {
-            type: 'boolean',
-            description:
-              'Auto-replace only unambiguous exact matches without prompting',
-            default: false,
-          })
-          .positional('rules', {
-            type: 'string',
-            array: true,
-            description:
-              'Specific rule names or .mdc files to check (default: all .agents/rules/*.mdc)',
-          });
-      },
-      migrateRulesToSkillsHandler,
+      () => undefined,
     )
     .command<RevertArgs>(
       'revert',

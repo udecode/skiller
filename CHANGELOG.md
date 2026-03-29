@@ -1,5 +1,15 @@
 # skiller
 
+## 0.9.2
+
+### Patch Changes
+
+**CLI migrate subcommands now route correctly:**
+
+- Fixes `skiller migrate claude-plugins` being misparsed as `migrate rules-to-skills`
+- Nests migrate commands under a real `migrate` parent command so `claude-plugins` and `rules-to-skills` resolve unambiguously
+- Adds an integration regression test for `migrate claude-plugins --help`
+
 ## 0.9.1
 
 ### Patch Changes
