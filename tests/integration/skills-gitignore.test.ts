@@ -14,11 +14,10 @@ describe('Skills Gitignore Integration', () => {
     await teardownTestProject(testProject.projectRoot);
   });
 
-  it('should NOT add .claude/skills to gitignore when skills are enabled', async () => {
+  it('should gitignore generated .claude/skills but not canonical .agents/skills when skills are enabled', async () => {
     const { projectRoot } = testProject;
 
-    // Create .claude directory with skiller.toml
-    const skillerDir = path.join(projectRoot, '.claude');
+    const skillerDir = path.join(projectRoot, '.agents');
     await fs.mkdir(skillerDir, { recursive: true });
 
     const tomlContent = `
@@ -30,13 +29,25 @@ enabled = true
 `;
     await fs.writeFile(path.join(skillerDir, 'skiller.toml'), tomlContent);
 
-    // Create minimal AGENTS.md
+    // Create minimal AGENTS.md and one canonical skill
     await fs.writeFile(path.join(skillerDir, 'AGENTS.md'), '# Test');
+    await fs.mkdir(path.join(projectRoot, '.agents', 'skills', 'local-skill'), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(projectRoot, '.agents', 'skills', 'local-skill', 'SKILL.md'),
+      `---
+name: local-skill
+description: Local skill
+---
+
+# Local skill`,
+    );
 
     // Run apply
     await applyAllAgentConfigs(
       projectRoot,
-      ['claude'], // Only run claude agent
+      ['claude-code'],
       undefined, // configPath
       false, // cliMcpEnabled
       undefined, // cliMcpStrategy
@@ -53,16 +64,15 @@ enabled = true
     const gitignorePath = path.join(projectRoot, '.gitignore');
     const gitignoreContent = await fs.readFile(gitignorePath, 'utf8');
 
-    // In the new architecture, .claude/skills is the source of truth
-    // and should NEVER be gitignored
-    expect(gitignoreContent).not.toContain('.claude/skills');
+    expect(gitignoreContent).toContain('/.claude/skills');
+    expect(gitignoreContent).not.toContain('/.agents/skills');
   });
 
   it('should respect agent-level gitignore = false config for both output files and MCP files', async () => {
     const { projectRoot } = testProject;
 
-    // Create .claude directory with skiller.toml that disables gitignore for claude agent
-    const skillerDir = path.join(projectRoot, '.claude');
+    // Create .agents directory with skiller.toml that disables gitignore for claude-code agent
+    const skillerDir = path.join(projectRoot, '.agents');
     await fs.mkdir(skillerDir, { recursive: true });
 
     const tomlContent = `
@@ -72,7 +82,7 @@ enabled = true
 [mcp]
 enabled = true
 
-[agents.claude]
+[agents.claude-code]
 enabled = true
 gitignore = false
 
@@ -101,7 +111,7 @@ enabled = true
     // Run apply with both agents and MCP enabled
     await applyAllAgentConfigs(
       projectRoot,
-      ['claude', 'codex'],
+      ['claude-code', 'codex'],
       undefined, // configPath
       true, // cliMcpEnabled
       undefined, // cliMcpStrategy

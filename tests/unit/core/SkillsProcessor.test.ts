@@ -54,6 +54,44 @@ description: Test skill
       expect(content).toContain('name: test-skill');
     });
 
+    it('symlinks plain skills when the target can reuse the canonical folder safely', async () => {
+      const sourceDir = path.join(tmpDir, '.agents', 'skills');
+      const targetDir = path.join(tmpDir, '.claude', 'skills');
+      const skillDir = path.join(sourceDir, 'plain-skill');
+
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, 'SKILL.md'),
+        `---
+name: plain-skill
+description: Plain skill
+---
+
+# Plain Skill`,
+      );
+
+      const { copySkillsToAgent } = await import(
+        '../../../src/core/SkillsProcessor'
+      );
+
+      const result = await copySkillsToAgent(
+        sourceDir,
+        targetDir,
+        tmpDir,
+        false,
+        false,
+      );
+
+      expect(result.copied).toBe(1);
+
+      const targetSkillDir = path.join(targetDir, 'plain-skill');
+      const stat = await fs.lstat(targetSkillDir);
+      expect(stat.isSymbolicLink()).toBe(true);
+      expect(
+        await fs.readFile(path.join(targetSkillDir, 'SKILL.md'), 'utf8'),
+      ).toContain('Plain Skill');
+    });
+
     it('should compile @reference SKILL.md and exclude .mdc when copying to other agents', async () => {
       const sourceDir = path.join(tmpDir, '.claude', 'skills');
       const targetDir = path.join(tmpDir, '.agents', 'skills');
@@ -231,7 +269,7 @@ description: Test skill
   describe('propagateSkills with multiple agents', () => {
     it('should copy skills to all agents with native skills support', async () => {
       // Setup source skills with proper YAML frontmatter
-      const sourceDir = path.join(tmpDir, '.claude', 'skills');
+      const sourceDir = path.join(tmpDir, '.agents', 'skills');
       const skillDir = path.join(sourceDir, 'test-skill');
 
       await fs.mkdir(skillDir, { recursive: true });
@@ -257,16 +295,15 @@ This is a test skill.`;
 
       await propagateSkills(tmpDir, agents, true, false, false);
 
-      // Verify skills copied to the shared .agents/skills destination
-      const codexSkillPath = path.join(
+      // Verify skills copied to Claude's native skills destination.
+      const claudeSkillPath = path.join(
         tmpDir,
-        '.agents',
+        '.claude',
         'skills',
         'test-skill',
         'SKILL.md',
       );
-      const copiedContent = await fs.readFile(codexSkillPath, 'utf8');
-      // Copied skills should be compiled for non-Claude agents (no @reference to .mdc)
+      const copiedContent = await fs.readFile(claudeSkillPath, 'utf8');
       expect(copiedContent).toContain('name: test-skill');
       expect(copiedContent).toContain(
         'description: Test skill for unit testing',
@@ -281,7 +318,7 @@ This is a test skill.`;
         fs.access(
           path.join(
             tmpDir,
-            '.agents',
+            '.claude',
             'skills',
             'test-skill',
             'test-skill.mdc',
@@ -291,7 +328,7 @@ This is a test skill.`;
     });
 
     it('should handle shared .agents/skills destinations across multiple agents', async () => {
-      const sourceDir = path.join(tmpDir, '.claude', 'skills');
+      const sourceDir = path.join(tmpDir, '.agents', 'skills');
       const skillDir = path.join(sourceDir, 'test-skill');
 
       await fs.mkdir(skillDir, { recursive: true });
@@ -323,7 +360,7 @@ description: Shared skill
     });
 
     it('should skip agents without native skills support', async () => {
-      const sourceDir = path.join(tmpDir, '.claude', 'skills');
+      const sourceDir = path.join(tmpDir, '.agents', 'skills');
       await fs.mkdir(sourceDir, { recursive: true });
 
       // Mock agent without skills support
@@ -349,7 +386,7 @@ description: Shared skill
     });
 
     it('should migrate legacy .codex/skills into .agents/skills for Codex', async () => {
-      const sourceDir = path.join(tmpDir, '.claude', 'skills');
+      const sourceDir = path.join(tmpDir, '.agents', 'skills');
       await fs.mkdir(sourceDir, { recursive: true });
 
       const legacySkillDir = path.join(
@@ -403,9 +440,9 @@ Legacy content.
 
       const paths = getSkillsGitignorePaths(tmpDir, agents);
 
-      // Should include .agents/skills but NOT .claude/skills (source)
-      expect(paths).toContain('.agents/skills');
-      expect(paths).not.toContain('.claude/skills');
+      // Should include generated .claude/skills but NOT canonical .agents/skills
+      expect(paths).toContain('.claude/skills');
+      expect(paths).not.toContain('.agents/skills');
     });
 
     it('should return relative paths from project root', () => {

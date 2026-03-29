@@ -53,6 +53,7 @@ export function logVerboseInfo(
 
 // Skills-related constants
 export const SKILLS_DIR = 'skills';
+export const CANONICAL_SKILLS_PATH = '.agents/skills';
 export const CLAUDE_SKILLS_PATH = '.claude/skills';
 export const SKILL_MD_FILENAME = 'SKILL.md';
 

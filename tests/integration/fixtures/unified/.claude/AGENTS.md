@@ -1,2 +1,2 @@
-# Primary Rules
-Line A
+# Legacy Rules
+Legacy Line

@@ -1,5 +1,50 @@
 # skiller
 
+## 0.9.0
+
+### Major Changes
+
+**`.agents` is now the only shared project state:**
+
+- Hard-cuts shared config and authored instructions to `.agents/`
+- Uses `.agents/AGENTS.md` as the authored source and keeps root `AGENTS.md` as generated output
+- Uses `.agents/skills/` as the canonical project skill tree
+- Uses `.agents/skiller.toml` as the canonical config path
+- Uses `.agents/.skiller.json` as the skiller-owned local manifest
+- Migrates legacy `.claude` project state into `.agents` during `apply`
+
+**Canonical skills are now plain runtime output:**
+
+- Treats `.agents/skills/` as agent-consumable runtime state, not `.mdc` authoring state
+- Compiles local `.agents/rules/*.mdc` into plain `.agents/skills/<name>/SKILL.md`
+- Removes canonical sidecar `.mdc` files from `.agents/skills`
+- Removes canonical `@file` indirection so Codex and other agents can consume `SKILL.md` directly
+- Keeps upstream `skills` installs plain and untouched inside `.agents/skills`
+
+**`skiller` is now `skills`-centric:**
+
+- Keeps `skiller add/remove/list/find/check/update` as thin wrappers around the local `skills` CLI
+- Treats `skills-lock.json` as the source of truth for upstream-installed skills
+- Drops Claude plugin sync as a steady-state install/update path
+- Fails fast on legacy Claude plugin-backed state instead of acting like a second package manager
+- Adds `skiller migrate claude-plugins` to resolve legacy Claude plugins to installable `skills` sources before cleanup
+
+**Ownership and propagation were tightened:**
+
+- Splits canonical skills into explicit ownership buckets instead of guessing from file contents
+- Treats upstream `skills-lock.json` entries as read-only for skiller
+- Treats `.agents/rules/*.mdc` and explicit local manifest entries as local-only authoring sources
+- Warns and leaves orphan canonical skills alone instead of auto-adopting them
+- Prefers direct canonical skill reuse and symlink-first propagation where safe, with copy fallback only when needed
+
+**Migration and duplicate handling got less stupid:**
+
+- Migrates legacy `.claude/rules/*.mdc` and legacy skill-sidecar shapes into the new `.agents` layout
+- Stops extracting plugin-managed or command-managed canonical skills into local `.agents/rules/*.mdc`
+- Prevents stale alias families like `claude-foo`, `claude-foo-2`, and managed numeric suffix collisions from reappearing
+- Cleans up command-mirror duplication when canonical skills already own the public name
+- Fixes frontmatter parsing and canonical round-tripping so malformed command metadata does not produce double frontmatter blocks
+
 ## 0.8.1
 
 ### Major Changes

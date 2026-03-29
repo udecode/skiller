@@ -86,7 +86,7 @@ Find docs and summarize.
     expect(parsedAgent.body).toContain('Find docs and summarize.');
 
     await expect(
-      fs.access(path.join(tmpDir, '.claude', '.skiller.json')),
+      fs.access(path.join(tmpDir, '.agents', '.skiller.json')),
     ).resolves.toBeUndefined();
     await expect(
       fs.access(path.join(targetSkillsDir, '.skiller.json')),
@@ -175,7 +175,7 @@ Do something.
 `,
     );
 
-    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
+    const targetSkillsDir = path.join(tmpDir, '.claude', 'skills');
 
     // Simulate an existing manual skill already occupying the name.
     const manualDir = path.join(targetSkillsDir, 'do-thing');
@@ -223,158 +223,61 @@ Manual content.
     );
   });
 
-  it('project commands can take over a previously plugin-managed name (plugin moves to namespaced on next sync)', async () => {
-    const pluginId = 'testplugin@testmarket';
-    const pluginSourcePath = path.join(
-      tmpHome,
-      '.claude',
-      'plugins',
-      'marketplaces',
-      'testmarket',
-      'plugins',
-      'testplugin',
-    );
-    const pluginCacheInstallPath = path.join(
-      tmpHome,
-      '.claude',
-      'plugins',
-      'cache',
-      'testmarket',
-      'testplugin',
-      '1.0.0',
-    );
-    await fs.mkdir(pluginSourcePath, { recursive: true });
-
-    // Plugin command (converted to skill)
-    await fs.mkdir(path.join(pluginSourcePath, 'commands'), {
-      recursive: true,
-    });
-    await fs.writeFile(
-      path.join(pluginSourcePath, 'commands', 'do-thing.md'),
-      `---
-description: Plugin wins first
----
-
-From plugin.
-`,
-    );
-
-    // Write installed_plugins.json for this project
-    const indexPath = path.join(
-      tmpHome,
-      '.claude',
-      'plugins',
-      'installed_plugins.json',
-    );
-    await fs.mkdir(path.dirname(indexPath), { recursive: true });
-    await fs.writeFile(
-      indexPath,
-      JSON.stringify(
-        {
-          version: 2,
-          plugins: {
-            [pluginId]: [
-              {
-                scope: 'project',
-                projectPath: tmpDir,
-                installPath: pluginCacheInstallPath,
-                version: '1.0.0',
-                installedAt: '2026-02-01T00:00:00.000Z',
-                lastUpdated: '2026-02-02T00:00:00.000Z',
-              },
-            ],
-          },
-        },
-        null,
-        2,
-      ),
-    );
-
-    // Enable plugin in project .claude/settings.json
+  it('skips syncing a claude command when a canonical skill with the same name already exists', async () => {
     const projectClaudeDir = path.join(tmpDir, '.claude');
-    await fs.mkdir(projectClaudeDir, { recursive: true });
-    await fs.writeFile(
-      path.join(projectClaudeDir, 'settings.json'),
-      JSON.stringify(
-        {
-          enabledPlugins: {
-            [pluginId]: true,
-          },
-        },
-        null,
-        2,
-      ),
-    );
-
-    const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
-
-    const { syncClaudeProjectCommandsAndAgentsToSkillsDirs } = await import(
-      '../../../src/core/ClaudeProjectSync'
-    );
-    const { syncClaudePluginsToSkillsDirs } = await import(
-      '../../../src/core/ClaudePluginSync'
-    );
-
-    // First run: plugin installs do-thing
-    await syncClaudeProjectCommandsAndAgentsToSkillsDirs({
-      projectRoot: tmpDir,
-      targetSkillsDirs: [targetSkillsDir],
-      verbose: false,
-      dryRun: false,
-    });
-    await syncClaudePluginsToSkillsDirs({
-      projectRoot: tmpDir,
-      targetSkillsDirs: [targetSkillsDir],
-      verbose: false,
-      dryRun: false,
-    });
-
-    const firstInstalled = await fs.readFile(
-      path.join(targetSkillsDir, 'do-thing', 'SKILL.md'),
-      'utf8',
-    );
-    expect(parseFrontmatter(firstInstalled).body).toContain('From plugin.');
-
-    // Add project command with same name; should take over do-thing
     await fs.mkdir(path.join(projectClaudeDir, 'commands'), {
       recursive: true,
     });
+
     await fs.writeFile(
-      path.join(projectClaudeDir, 'commands', 'do-thing.md'),
+      path.join(projectClaudeDir, 'commands', 'google-forms.md'),
       `---
-description: Project takes over
+description: Command copy
 ---
 
-From project.
+Command content.
 `,
     );
 
-    // Second run: project takes do-thing, plugin is moved to namespaced
+    const canonicalSkillDir = path.join(
+      tmpDir,
+      '.agents',
+      'skills',
+      'google-forms',
+    );
+    await fs.mkdir(canonicalSkillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(canonicalSkillDir, 'SKILL.md'),
+      `---
+name: google-forms
+description: Canonical skill
+---
+
+Canonical content.
+`,
+    );
+
+    const targetSkillsDir = path.join(tmpDir, '.claude', 'skills');
+    const { syncClaudeProjectCommandsAndAgentsToSkillsDirs } = await import(
+      '../../../src/core/ClaudeProjectSync'
+    );
+
     await syncClaudeProjectCommandsAndAgentsToSkillsDirs({
       projectRoot: tmpDir,
       targetSkillsDirs: [targetSkillsDir],
       verbose: false,
       dryRun: false,
     });
-    await syncClaudePluginsToSkillsDirs({
-      projectRoot: tmpDir,
-      targetSkillsDirs: [targetSkillsDir],
-      verbose: false,
-      dryRun: false,
-    });
-
-    const projectInstalled = await fs.readFile(
-      path.join(targetSkillsDir, 'do-thing', 'SKILL.md'),
-      'utf8',
-    );
-    expect(parseFrontmatter(projectInstalled).body).toContain('From project.');
 
     await expect(
-      fs.access(path.join(targetSkillsDir, 'testplugin-do-thing', 'SKILL.md')),
-    ).resolves.toBeUndefined();
+      fs.access(path.join(targetSkillsDir, 'claude-google-forms')),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(targetSkillsDir, 'claude-google-forms-2')),
+    ).rejects.toThrow();
   });
 
-  it('treats nested local .claude/skills as flattened names when reserving against project commands/agents', async () => {
+  it('skips syncing project items whose flattened names already exist as canonical skills', async () => {
     const projectClaudeDir = path.join(tmpDir, '.claude');
     await fs.mkdir(path.join(projectClaudeDir, 'commands'), {
       recursive: true,
@@ -400,13 +303,15 @@ From project workflows-lfg.
 `,
     );
 
-    // Nested local skill: .claude/skills/workflows/lfg (copies to workflows-lfg)
+    // Nested local skill: .agents/skills/workflows/lfg (flattens to workflows-lfg)
     const localSkillDir = path.join(
-      projectClaudeDir,
+      tmpDir,
+      '.agents',
       'skills',
       'workflows',
       'lfg',
     );
+    await fs.mkdir(path.join(tmpDir, '.agents'), { recursive: true });
     await fs.mkdir(localSkillDir, { recursive: true });
     await fs.writeFile(
       path.join(localSkillDir, 'SKILL.md'),
@@ -417,6 +322,18 @@ description: Local nested skill
 
 Local nested content.
 `,
+    );
+    await fs.writeFile(
+      path.join(tmpDir, '.agents', '.skiller.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          targets: {},
+          localSkills: ['workflows-lfg'],
+        },
+        null,
+        2,
+      ),
     );
 
     const targetSkillsDir = path.join(tmpDir, '.agents', 'skills');
@@ -436,10 +353,10 @@ Local nested content.
       fs.access(path.join(targetSkillsDir, 'lfg', 'SKILL.md')),
     ).resolves.toBeUndefined();
 
-    // Project 'workflows-lfg' conflicts with local nested (flattened) name, so it must be namespaced
+    // Project 'workflows-lfg' conflicts with canonical nested (flattened) name, so it must be skipped
     await expect(
-      fs.access(path.join(targetSkillsDir, 'claude-workflows-lfg', 'SKILL.md')),
-    ).resolves.toBeUndefined();
+      fs.access(path.join(targetSkillsDir, 'claude-workflows-lfg')),
+    ).rejects.toThrow();
     await expect(
       fs.access(path.join(targetSkillsDir, 'workflows-lfg')),
     ).rejects.toThrow();

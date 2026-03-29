@@ -1,3 +1,1 @@
-default_agents=["github-copilot"]
-[agents.github-copilot]
-output_path="AGENTS.md"
+default_agents=["claude-code"]

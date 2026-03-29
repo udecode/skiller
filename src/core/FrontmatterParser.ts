@@ -56,9 +56,8 @@ export function parseFrontmatter(content: string): ParsedContent {
     try {
       // Fix common issue: globs as comma-separated unquoted strings
       // Pattern: globs: *.tsx,**/path -> globs: ["*.tsx", "**/path"]
-      const fixedYaml = yamlContent.replace(
-        /^(\s*globs\s*:\s*)([^\n[{]+)$/gm,
-        (match, prefix, value) => {
+      const fixedYaml = yamlContent
+        .replace(/^(\s*globs\s*:\s*)([^\n[{]+)$/gm, (match, prefix, value) => {
           // Check if value looks like comma-separated patterns (contains * or commas)
           if (value.includes('*') || value.includes(',')) {
             // Split by comma and quote each part
@@ -71,8 +70,22 @@ export function parseFrontmatter(content: string): ParsedContent {
             return `${prefix}[${patterns}]`;
           }
           return match;
-        },
-      );
+        })
+        .replace(
+          /^(\s*[\w.-]+\s*:\s*)([^\n"'[{>|].*:\s.*)$/gm,
+          (match, prefix, value) => {
+            const trimmed = value.trim();
+            if (
+              trimmed.length === 0 ||
+              /^(true|false|null)$/i.test(trimmed) ||
+              /^-?\d+(\.\d+)?$/.test(trimmed)
+            ) {
+              return match;
+            }
+
+            return `${prefix}${JSON.stringify(trimmed)}`;
+          },
+        );
 
       // Try parsing again with fixed YAML
       if (fixedYaml !== yamlContent) {

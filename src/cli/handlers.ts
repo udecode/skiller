@@ -6,7 +6,21 @@ import * as fs from 'fs/promises';
 import { ERROR_PREFIX, DEFAULT_RULES_FILENAME } from '../constants';
 import { McpStrategy } from '../types';
 import { loadConfig } from '../core/ConfigLoader';
+import { planClaudePluginSkillsMigration } from '../core/ClaudePluginMigration';
+import {
+  buildRulesReplacementInstallArgs,
+  planRulesToSkillsMigration,
+  removeLocalRuleReplacementState,
+  type RuleReplacementCandidate,
+  type SkillsRegistryMatch,
+} from '../core/RulesToSkillsMigration';
 import { getAgentIdentifiersForCliHelp } from '../agents';
+import { runSkillsCli } from './skills-cli';
+import {
+  CANONICAL_SKILLER_DIR,
+  SKILLER_CONFIG_FILE,
+} from '../core/project-paths';
+import * as readline from 'readline/promises';
 
 export interface ApplyArgs {
   'project-root': string;
@@ -36,6 +50,159 @@ export interface RevertArgs {
   verbose: boolean;
   'dry-run': boolean;
   'local-only': boolean;
+}
+
+export interface SkillsWrapperArgs {
+  'project-root': string;
+  args?: string[];
+}
+
+export interface SkillsPassthroughArgs extends SkillsWrapperArgs {
+  subcommand: string;
+}
+
+export interface MigrateClaudePluginsArgs {
+  'project-root': string;
+  execute: boolean;
+}
+
+export interface MigrateRulesToSkillsArgs {
+  'project-root': string;
+  execute: boolean;
+  rules?: string[];
+  yes: boolean;
+}
+
+async function executeSkillsWrapper(
+  projectRoot: string,
+  args: string[],
+): Promise<void> {
+  try {
+    await runSkillsCli(projectRoot, args);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`${ERROR_PREFIX} ${message}`);
+    process.exit(1);
+  }
+}
+
+function buildClaudePluginMigrationArgs(source: string): string[] {
+  return ['add', source, '--agent', 'universal', '--skill', '*', '-y'];
+}
+
+function formatInstalls(count: number): string {
+  if (!count || count <= 0) return '0 installs';
+  if (count >= 1_000_000) {
+    return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M installs`;
+  }
+  if (count >= 1_000) {
+    return `${(count / 1_000).toFixed(1).replace(/\.0$/, '')}K installs`;
+  }
+  return `${count} install${count === 1 ? '' : 's'}`;
+}
+
+function formatMatch(match: SkillsRegistryMatch): string {
+  const source = match.source || match.slug;
+  return `${source}@${match.name} (${formatInstalls(match.installs)})`;
+}
+
+async function promptLine(message: string): Promise<string> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  try {
+    return (await rl.question(message)).trim();
+  } finally {
+    rl.close();
+  }
+}
+
+async function promptForReplacement(
+  candidate: RuleReplacementCandidate,
+): Promise<SkillsRegistryMatch | 'cleanup' | null> {
+  if (candidate.alreadyInstalled) {
+    const answer = await promptLine(
+      `[skiller] '${candidate.ruleName}' is already installed upstream. Remove the local rule copy? [y/N] `,
+    );
+    return /^y(es)?$/i.test(answer) ? 'cleanup' : null;
+  }
+
+  if (candidate.matches.length === 1) {
+    const match = candidate.matches[0];
+    const answer = await promptLine(
+      `[skiller] Replace '${candidate.ruleName}' with ${formatMatch(match)}? [y/N] `,
+    );
+    return /^y(es)?$/i.test(answer) ? match : null;
+  }
+
+  console.log(`[skiller] Multiple exact matches for '${candidate.ruleName}':`);
+  for (const [index, match] of candidate.matches.entries()) {
+    console.log(`  ${index + 1}. ${formatMatch(match)}`);
+  }
+  const answer = await promptLine(
+    `[skiller] Choose 1-${candidate.matches.length} or press Enter to skip: `,
+  );
+  if (answer.length === 0) return null;
+
+  const selectedIndex = Number.parseInt(answer, 10);
+  if (
+    Number.isNaN(selectedIndex) ||
+    selectedIndex < 1 ||
+    selectedIndex > candidate.matches.length
+  ) {
+    console.log(`[skiller] Skipping '${candidate.ruleName}' (invalid choice).`);
+    return null;
+  }
+
+  return candidate.matches[selectedIndex - 1];
+}
+
+function printRulesToSkillsPlan(
+  plan: Awaited<ReturnType<typeof planRulesToSkillsMigration>>,
+): void {
+  console.log(
+    `[skiller] Scanned ${plan.scannedRules.length} local rule(s) from .agents/rules.`,
+  );
+
+  if (plan.candidates.length > 0) {
+    console.log('[skiller] Exact skills.sh matches:');
+    for (const candidate of plan.candidates) {
+      if (candidate.alreadyInstalled) {
+        console.log(
+          `- ${candidate.ruleName}: already installed upstream; local rule can be removed`,
+        );
+        continue;
+      }
+
+      if (candidate.matches.length === 1) {
+        console.log(
+          `- ${candidate.ruleName}: ${formatMatch(candidate.matches[0])}`,
+        );
+        continue;
+      }
+
+      console.log(
+        `- ${candidate.ruleName}: ${candidate.matches.length} exact matches`,
+      );
+      for (const match of candidate.matches) {
+        console.log(`  - ${formatMatch(match)}`);
+      }
+    }
+  } else {
+    console.log('[skiller] No exact skills.sh matches found.');
+  }
+
+  if (plan.unmatched.length > 0) {
+    console.log(`[skiller] No exact match for: ${plan.unmatched.join(', ')}`);
+  }
+
+  if (plan.missingRequested.length > 0) {
+    console.log(
+      `[skiller] Requested rules not found: ${plan.missingRequested.join(', ')}`,
+    );
+  }
 }
 
 /**
@@ -137,10 +304,10 @@ export async function initHandler(argv: InitArgs): Promise<void> {
         process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
         'skiller',
       )
-    : path.join(projectRoot, '.claude');
+    : path.join(projectRoot, CANONICAL_SKILLER_DIR);
   await fs.mkdir(skillerDir, { recursive: true });
-  const instructionsPath = path.join(skillerDir, DEFAULT_RULES_FILENAME); // .claude/AGENTS.md
-  const tomlPath = path.join(skillerDir, 'skiller.toml');
+  const instructionsPath = path.join(skillerDir, DEFAULT_RULES_FILENAME);
+  const tomlPath = path.join(skillerDir, SKILLER_CONFIG_FILE);
   const exists = async (p: string) => {
     try {
       await fs.access(p);
@@ -157,8 +324,8 @@ export async function initHandler(argv: InitArgs): Promise<void> {
 # uncomment and populate the following line. If omitted, all agents are active.
 # default_agents = ["github-copilot", "claude-code"]
 
-# Enable nested rule loading from nested .claude directories
-# When enabled, skiller will search for and process .claude directories throughout the project hierarchy
+# Enable nested rule loading from nested .agents directories
+# When enabled, skiller will search for and process .agents directories throughout the project hierarchy
 # nested = false
 
 # --- Agent Specific Configurations ---
@@ -203,6 +370,185 @@ export async function initHandler(argv: InitArgs): Promise<void> {
   } else {
     console.log(`[skiller] skiller.toml already exists, skipping`);
   }
+}
+
+export async function migrateClaudePluginsHandler(
+  argv: MigrateClaudePluginsArgs,
+): Promise<void> {
+  const projectRoot = argv['project-root'];
+
+  try {
+    const plan = await planClaudePluginSkillsMigration(projectRoot);
+
+    if (plan.installs.length === 0 && plan.unresolved.length === 0) {
+      console.log('[skiller] No Claude plugin repos found to migrate.');
+      return;
+    }
+
+    console.log('[skiller] Claude plugin migration plan:');
+    for (const install of plan.installs) {
+      console.log(
+        `- ${install.source} <- ${install.pluginIds.join(', ')} (${install.strategy})`,
+      );
+    }
+    for (const unresolved of plan.unresolved) {
+      console.log(`- unresolved ${unresolved.pluginId}: ${unresolved.reason}`);
+    }
+
+    if (!argv.execute) {
+      console.log(
+        '[skiller] Run again with --execute to install the resolved repos through skills.',
+      );
+      return;
+    }
+
+    if (plan.unresolved.length > 0) {
+      throw new Error(
+        `Cannot execute migration until all plugins resolve:\n${plan.unresolved.map((entry) => `- ${entry.pluginId}: ${entry.reason}`).join('\n')}`,
+      );
+    }
+
+    for (const install of plan.installs) {
+      await runSkillsCli(
+        projectRoot,
+        buildClaudePluginMigrationArgs(install.source),
+      );
+    }
+
+    console.log(
+      '[skiller] Claude plugin repo migration completed. Remove the plugin entries from .claude/settings.json, then rerun skiller apply.',
+    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`${ERROR_PREFIX} ${message}`);
+    process.exit(1);
+  }
+}
+
+export async function migrateRulesToSkillsHandler(
+  argv: MigrateRulesToSkillsArgs,
+): Promise<void> {
+  const projectRoot = argv['project-root'];
+
+  try {
+    const plan = await planRulesToSkillsMigration(projectRoot, argv.rules);
+    printRulesToSkillsPlan(plan);
+
+    if (!argv.execute) {
+      console.log(
+        '[skiller] Run again with --execute to replace interactively, or --execute --yes to auto-replace unambiguous matches.',
+      );
+      return;
+    }
+
+    if (!argv.yes && !process.stdin.isTTY) {
+      throw new Error(
+        'Interactive replacement requires a TTY. Re-run with --yes to auto-replace only unambiguous matches.',
+      );
+    }
+
+    let replacedCount = 0;
+
+    for (const candidate of plan.candidates) {
+      let selection: SkillsRegistryMatch | 'cleanup' | null = null;
+
+      if (argv.yes) {
+        if (candidate.alreadyInstalled) {
+          selection = 'cleanup';
+        } else if (candidate.matches.length === 1) {
+          selection = candidate.matches[0];
+        } else {
+          console.log(
+            `[skiller] Skipping '${candidate.ruleName}' because it has multiple exact matches.`,
+          );
+          continue;
+        }
+      } else {
+        selection = await promptForReplacement(candidate);
+      }
+
+      if (!selection) continue;
+
+      if (selection !== 'cleanup') {
+        await runSkillsCli(
+          projectRoot,
+          buildRulesReplacementInstallArgs(selection),
+        );
+      }
+
+      await removeLocalRuleReplacementState(
+        projectRoot,
+        candidate.ruleName,
+        false,
+      );
+      replacedCount += 1;
+      console.log(`[skiller] Replaced local rule '${candidate.ruleName}'.`);
+    }
+
+    if (replacedCount === 0) {
+      console.log('[skiller] No local rules were replaced.');
+      return;
+    }
+
+    console.log(
+      '[skiller] Replacement pass completed. Run skiller apply to refresh derived agent outputs.',
+    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`${ERROR_PREFIX} ${message}`);
+    process.exit(1);
+  }
+}
+
+export async function addHandler(argv: SkillsWrapperArgs): Promise<void> {
+  await executeSkillsWrapper(argv['project-root'], [
+    'add',
+    ...(argv.args ?? []),
+  ]);
+}
+
+export async function removeHandler(argv: SkillsWrapperArgs): Promise<void> {
+  await executeSkillsWrapper(argv['project-root'], [
+    'remove',
+    ...(argv.args ?? []),
+  ]);
+}
+
+export async function listHandler(argv: SkillsWrapperArgs): Promise<void> {
+  await executeSkillsWrapper(argv['project-root'], [
+    'list',
+    ...(argv.args ?? []),
+  ]);
+}
+
+export async function findHandler(argv: SkillsWrapperArgs): Promise<void> {
+  await executeSkillsWrapper(argv['project-root'], [
+    'find',
+    ...(argv.args ?? []),
+  ]);
+}
+
+export async function checkHandler(argv: SkillsWrapperArgs): Promise<void> {
+  await executeSkillsWrapper(argv['project-root'], [
+    'check',
+    ...(argv.args ?? []),
+  ]);
+}
+
+export async function updateHandler(argv: SkillsWrapperArgs): Promise<void> {
+  await executeSkillsWrapper(argv['project-root'], [
+    'update',
+    ...(argv.args ?? []),
+  ]);
+}
+
+export async function skillsHandler(
+  argv: SkillsPassthroughArgs,
+): Promise<void> {
+  await executeSkillsWrapper(argv['project-root'], [
+    argv.subcommand,
+    ...(argv.args ?? []),
+  ]);
 }
 
 /**

@@ -1,10 +1,24 @@
 import {
+  addHandler,
   applyHandler,
   initHandler,
+  migrateClaudePluginsHandler,
   revertHandler,
+  skillsHandler,
+  updateHandler,
+  removeHandler,
+  listHandler,
+  findHandler,
+  checkHandler,
 } from '../../../src/cli/handlers';
 import { applyAllAgentConfigs } from '../../../src/lib';
 import { revertAllAgentConfigs } from '../../../src/revert';
+import { runSkillsCli } from '../../../src/cli/skills-cli';
+import { planClaudePluginSkillsMigration } from '../../../src/core/ClaudePluginMigration';
+import {
+  planRulesToSkillsMigration,
+  removeLocalRuleReplacementState,
+} from '../../../src/core/RulesToSkillsMigration';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -13,8 +27,15 @@ import { loadConfig } from '../../../src/core/ConfigLoader';
 // Mock the external dependencies
 jest.mock('../../../src/lib');
 jest.mock('../../../src/revert');
+jest.mock('../../../src/cli/skills-cli');
 jest.mock('fs/promises');
 jest.mock('../../../src/core/ConfigLoader');
+jest.mock('../../../src/core/ClaudePluginMigration');
+jest.mock('../../../src/core/RulesToSkillsMigration', () => ({
+  ...jest.requireActual('../../../src/core/RulesToSkillsMigration'),
+  planRulesToSkillsMigration: jest.fn(),
+  removeLocalRuleReplacementState: jest.fn(),
+}));
 
 describe('CLI Handlers', () => {
   const mockProjectRoot = '/mock/project/root';
@@ -24,6 +45,18 @@ describe('CLI Handlers', () => {
     jest.clearAllMocks();
     (applyAllAgentConfigs as jest.Mock).mockResolvedValue(undefined);
     (revertAllAgentConfigs as jest.Mock).mockResolvedValue(undefined);
+    (runSkillsCli as jest.Mock).mockResolvedValue(undefined);
+    (planClaudePluginSkillsMigration as jest.Mock).mockResolvedValue({
+      installs: [],
+      unresolved: [],
+    });
+    (planRulesToSkillsMigration as jest.Mock).mockResolvedValue({
+      candidates: [],
+      missingRequested: [],
+      scannedRules: [],
+      unmatched: [],
+    });
+    (removeLocalRuleReplacementState as jest.Mock).mockResolvedValue(undefined);
     // Mock loadConfig to return default config
     (loadConfig as jest.Mock).mockResolvedValue({
       defaultAgents: undefined,
@@ -67,6 +100,7 @@ describe('CLI Handlers', () => {
         true,
         undefined,
       );
+      expect(runSkillsCli).not.toHaveBeenCalled();
     });
 
     it('should handle mcp-overwrite correctly', async () => {
@@ -347,8 +381,204 @@ describe('CLI Handlers', () => {
     });
   });
 
+  describe('skills wrapper handlers', () => {
+    it('delegates add to the pinned local skills CLI', async () => {
+      await addHandler({
+        'project-root': mockProjectRoot,
+        args: ['react', '--agent', 'codex'],
+      });
+
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'add',
+        'react',
+        '--agent',
+        'codex',
+      ]);
+    });
+
+    it('delegates update to the pinned local skills CLI', async () => {
+      await updateHandler({
+        'project-root': mockProjectRoot,
+        args: ['--all'],
+      });
+
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'update',
+        '--all',
+      ]);
+    });
+
+    it('delegates remove/list/find/check wrappers to the pinned local skills CLI', async () => {
+      await removeHandler({
+        'project-root': mockProjectRoot,
+        args: ['react'],
+      });
+      await listHandler({
+        'project-root': mockProjectRoot,
+        args: ['--json'],
+      });
+      await findHandler({
+        'project-root': mockProjectRoot,
+        args: ['browser'],
+      });
+      await checkHandler({
+        'project-root': mockProjectRoot,
+        args: ['--strict'],
+      });
+
+      expect(runSkillsCli).toHaveBeenNthCalledWith(1, mockProjectRoot, [
+        'remove',
+        'react',
+      ]);
+      expect(runSkillsCli).toHaveBeenNthCalledWith(2, mockProjectRoot, [
+        'list',
+        '--json',
+      ]);
+      expect(runSkillsCli).toHaveBeenNthCalledWith(3, mockProjectRoot, [
+        'find',
+        'browser',
+      ]);
+      expect(runSkillsCli).toHaveBeenNthCalledWith(4, mockProjectRoot, [
+        'check',
+        '--strict',
+      ]);
+    });
+
+    it('passes through arbitrary skills subcommands unchanged', async () => {
+      await skillsHandler({
+        'project-root': mockProjectRoot,
+        subcommand: 'doctor',
+        args: ['--verbose'],
+      });
+
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'doctor',
+        '--verbose',
+      ]);
+    });
+  });
+
+  describe('migrateClaudePluginsHandler', () => {
+    it('prints a dry-run plan without executing skills installs', async () => {
+      (planClaudePluginSkillsMigration as jest.Mock).mockResolvedValue({
+        installs: [
+          {
+            source: 'EveryInc/compound-engineering-plugin',
+            pluginIds: ['compound-engineering@every-marketplace'],
+            strategy: 'marketplace-source',
+          },
+          {
+            source: 'udecode/dotai',
+            pluginIds: ['debug@dotai', 'test@dotai'],
+            strategy: 'marketplace-source',
+          },
+        ],
+        unresolved: [],
+      });
+
+      const logSpy = jest.spyOn(console, 'log').mockImplementation();
+
+      await migrateClaudePluginsHandler({
+        'project-root': mockProjectRoot,
+        execute: false,
+      });
+
+      expect(runSkillsCli).not.toHaveBeenCalled();
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('EveryInc/compound-engineering-plugin'),
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Run again with --execute'),
+      );
+
+      logSpy.mockRestore();
+    });
+
+    it('executes one skills add per resolved source when --execute is set', async () => {
+      (planClaudePluginSkillsMigration as jest.Mock).mockResolvedValue({
+        installs: [
+          {
+            source: 'EveryInc/compound-engineering-plugin',
+            pluginIds: ['compound-engineering@every-marketplace'],
+            strategy: 'marketplace-source',
+          },
+          {
+            source: 'udecode/dotai',
+            pluginIds: ['debug@dotai', 'test@dotai'],
+            strategy: 'marketplace-source',
+          },
+        ],
+        unresolved: [],
+      });
+
+      await migrateClaudePluginsHandler({
+        'project-root': mockProjectRoot,
+        execute: true,
+      });
+
+      expect(runSkillsCli).toHaveBeenNthCalledWith(1, mockProjectRoot, [
+        'add',
+        'EveryInc/compound-engineering-plugin',
+        '--agent',
+        'universal',
+        '--skill',
+        '*',
+        '-y',
+      ]);
+      expect(runSkillsCli).toHaveBeenNthCalledWith(2, mockProjectRoot, [
+        'add',
+        'udecode/dotai',
+        '--agent',
+        'universal',
+        '--skill',
+        '*',
+        '-y',
+      ]);
+    });
+
+    it('fails before executing anything when unresolved plugins remain', async () => {
+      (planClaudePluginSkillsMigration as jest.Mock).mockResolvedValue({
+        installs: [
+          {
+            source: 'EveryInc/compound-engineering-plugin',
+            pluginIds: ['compound-engineering@every-marketplace'],
+            strategy: 'marketplace-source',
+          },
+        ],
+        unresolved: [
+          {
+            pluginId: 'mystery@unknown-marketplace',
+            reason: 'No repo source found',
+          },
+        ],
+      });
+
+      const exitSpy = jest
+        .spyOn(process, 'exit')
+        .mockImplementation((code?: string | number | null | undefined) => {
+          throw new Error(`process.exit: ${code}`);
+        });
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      await expect(
+        migrateClaudePluginsHandler({
+          'project-root': mockProjectRoot,
+          execute: true,
+        }),
+      ).rejects.toThrow('process.exit: 1');
+
+      expect(runSkillsCli).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('mystery@unknown-marketplace'),
+      );
+
+      exitSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+  });
+
   describe('initHandler', () => {
-    const mockSkillerDir = path.join(mockProjectRoot, '.claude');
+    const mockSkillerDir = path.join(mockProjectRoot, '.agents');
     const mockInstructionsPath = path.join(mockSkillerDir, 'AGENTS.md');
     const mockTomlPath = path.join(mockSkillerDir, 'skiller.toml');
     const mockLegacyPath = path.join(mockSkillerDir, 'instructions.md');
@@ -359,7 +589,7 @@ describe('CLI Handlers', () => {
       (fs.writeFile as jest.Mock).mockResolvedValue(undefined);
     });
 
-    it('should create .claude directory and default files', async () => {
+    it('should create .agents directory and default files', async () => {
       const argv = {
         'project-root': mockProjectRoot,
         global: false,
@@ -568,6 +798,140 @@ describe('CLI Handlers', () => {
 
       exitSpy.mockRestore();
       errorSpy.mockRestore();
+    });
+  });
+
+  describe('migrateRulesToSkillsHandler', () => {
+    it('prints a dry-run plan without executing replacements', async () => {
+      const { migrateRulesToSkillsHandler } = await import(
+        '../../../src/cli/handlers'
+      );
+
+      (planRulesToSkillsMigration as jest.Mock).mockResolvedValue({
+        candidates: [
+          {
+            alreadyInstalled: false,
+            matches: [
+              {
+                installs: 2500,
+                name: 'linear',
+                slug: 'schpet/linear-cli/linear',
+                source: 'schpet/linear-cli',
+              },
+            ],
+            ruleName: 'linear',
+          },
+        ],
+        missingRequested: [],
+        scannedRules: ['linear', 'custom'],
+        unmatched: ['custom'],
+      });
+
+      const logSpy = jest.spyOn(console, 'log').mockImplementation();
+
+      await migrateRulesToSkillsHandler({
+        'project-root': mockProjectRoot,
+        execute: false,
+        yes: false,
+      });
+
+      expect(runSkillsCli).not.toHaveBeenCalled();
+      expect(removeLocalRuleReplacementState).not.toHaveBeenCalled();
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Scanned 2 local rule(s)'),
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Run again with --execute'),
+      );
+
+      logSpy.mockRestore();
+    });
+
+    it('auto-replaces unambiguous matches with --execute --yes', async () => {
+      const { migrateRulesToSkillsHandler } = await import(
+        '../../../src/cli/handlers'
+      );
+
+      (planRulesToSkillsMigration as jest.Mock).mockResolvedValue({
+        candidates: [
+          {
+            alreadyInstalled: false,
+            matches: [
+              {
+                installs: 2500,
+                name: 'linear',
+                slug: 'schpet/linear-cli/linear',
+                source: 'schpet/linear-cli',
+              },
+            ],
+            ruleName: 'linear',
+          },
+          {
+            alreadyInstalled: false,
+            matches: [
+              {
+                installs: 10,
+                name: 'spec',
+                slug: 'foo/bar/spec',
+                source: 'foo/bar',
+              },
+              {
+                installs: 9,
+                name: 'spec',
+                slug: 'zap/zorp/spec',
+                source: 'zap/zorp',
+              },
+            ],
+            ruleName: 'spec',
+          },
+          {
+            alreadyInstalled: true,
+            matches: [],
+            ruleName: 'comment',
+          },
+        ],
+        missingRequested: [],
+        scannedRules: ['comment', 'linear', 'spec'],
+        unmatched: [],
+      });
+
+      const logSpy = jest.spyOn(console, 'log').mockImplementation();
+
+      await migrateRulesToSkillsHandler({
+        'project-root': mockProjectRoot,
+        execute: true,
+        yes: true,
+      });
+
+      expect(runSkillsCli).toHaveBeenCalledTimes(1);
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'add',
+        'schpet/linear-cli',
+        '--agent',
+        'universal',
+        '--skill',
+        'linear',
+        '-y',
+      ]);
+      expect(removeLocalRuleReplacementState).toHaveBeenNthCalledWith(
+        1,
+        mockProjectRoot,
+        'linear',
+        false,
+      );
+      expect(removeLocalRuleReplacementState).toHaveBeenNthCalledWith(
+        2,
+        mockProjectRoot,
+        'comment',
+        false,
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Skipping 'spec' because it has multiple exact matches.",
+        ),
+      );
+
+      logSpy.mockRestore();
     });
   });
 });

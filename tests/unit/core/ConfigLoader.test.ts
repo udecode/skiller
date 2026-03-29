@@ -10,7 +10,7 @@ describe("ConfigLoader", () => {
 
 	beforeEach(async () => {
 		tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-config-"));
-		skillerDir = path.join(tmpDir, ".claude");
+		skillerDir = path.join(tmpDir, ".agents");
 		await fs.mkdir(skillerDir, { recursive: true });
 	});
 
@@ -112,6 +112,27 @@ describe("ConfigLoader", () => {
 			configPath: altPath,
 		});
 		expect(config.defaultAgents).toEqual(["X"]);
+	});
+
+	it("loads canonical config from .agents/skiller.toml", async () => {
+		await fs.writeFile(
+			path.join(skillerDir, "skiller.toml"),
+			`default_agents = ["codex"]`,
+		);
+		const config = await loadConfig({ projectRoot: tmpDir });
+		expect(config.defaultAgents).toEqual(["codex"]);
+	});
+
+	it("ignores legacy .claude/skiller.toml when canonical .agents config is absent", async () => {
+		const legacyDir = path.join(tmpDir, ".claude");
+		await fs.mkdir(legacyDir, { recursive: true });
+		await fs.writeFile(
+			path.join(legacyDir, "skiller.toml"),
+			`default_agents = ["claude-code"]`,
+		);
+		const config = await loadConfig({ projectRoot: tmpDir });
+		expect(config.defaultAgents).toBeUndefined();
+		expect(config.agentConfigs).toEqual({});
 	});
 
 	it("captures CLI agents override", async () => {

@@ -13,6 +13,8 @@ import {
 } from './core/apply-engine';
 import type { LoadedConfig } from './core/ConfigLoader';
 import { mapRawAgentConfigs } from './core/config-utils';
+import { migrateLegacyProjectState } from './core/SkillOwnership';
+import { assertNoLegacyClaudePluginState } from './core/LegacyClaudePluginState';
 import type { McpStrategy } from './types';
 
 const agents: IAgent[] = allAgents;
@@ -71,6 +73,9 @@ export async function applyAllAgentConfigs(
   cliBackupEnabled?: boolean,
   skillsEnabled?: boolean,
 ): Promise<void> {
+  await assertNoLegacyClaudePluginState(projectRoot);
+  await migrateLegacyProjectState(projectRoot, dryRun);
+
   // Load configuration and rules
   logVerbose(
     `Loading configuration from project root: ${projectRoot}`,
@@ -93,7 +98,7 @@ export async function applyAllAgentConfigs(
     );
 
     if (hierarchicalConfigs.length === 0) {
-      throw new Error('No .claude directories found');
+      throw new Error('No .agents directories found');
     }
 
     logWarn(
@@ -111,7 +116,7 @@ export async function applyAllAgentConfigs(
     rootConfig.cliAgents = includedAgents;
 
     logVerbose(
-      `Loaded ${hierarchicalConfigs.length} .claude directory configurations`,
+      `Loaded ${hierarchicalConfigs.length} .agents directory configurations`,
       verbose,
     );
     logVerbose(
@@ -134,18 +139,9 @@ export async function applyAllAgentConfigs(
       skillsEnabled,
       rootConfig.skills?.enabled,
     );
-    const { propagateSkills, migrateRulesToSkills } = await import(
-      './core/SkillsProcessor'
-    );
+    const { propagateSkills } = await import('./core/SkillsProcessor');
 
-    // Migrate content from .claude/rules to .claude/skills (only if rules exists)
-    if (skillsEnabledResolved) {
-      for (const configEntry of hierarchicalConfigs) {
-        await migrateRulesToSkills(configEntry.skillerDir, verbose, dryRun);
-      }
-    }
-
-    // Propagate skills for each nested .claude directory (or cleanup if disabled)
+    // Propagate skills for each nested .agents directory (or cleanup if disabled)
     for (const configEntry of hierarchicalConfigs) {
       const nestedRoot = path.dirname(configEntry.skillerDir);
       logVerbose(
@@ -193,7 +189,7 @@ export async function applyAllAgentConfigs(
       verbose,
     );
     logVerbose(
-      `Found .claude directory with ${singleConfig.concatenatedRules.length} characters of rules`,
+      `Found .agents directory with ${singleConfig.concatenatedRules.length} characters of rules`,
       verbose,
     );
 
@@ -210,14 +206,7 @@ export async function applyAllAgentConfigs(
       skillsEnabled,
       singleConfig.config.skills?.enabled,
     );
-    const { propagateSkills, migrateRulesToSkills } = await import(
-      './core/SkillsProcessor'
-    );
-
-    // Migrate content from .claude/rules to .claude/skills (only if rules exists)
-    if (skillsEnabledResolved) {
-      await migrateRulesToSkills(singleConfig.skillerDir, verbose, dryRun);
-    }
+    const { propagateSkills } = await import('./core/SkillsProcessor');
 
     // Always call propagateSkills - it handles cleanup when disabled
     await propagateSkills(

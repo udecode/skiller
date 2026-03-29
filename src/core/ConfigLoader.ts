@@ -12,6 +12,7 @@ import {
   RulesConfig,
 } from '../types';
 import { createSkillerError } from '../constants';
+import { CANONICAL_SKILLER_DIR, SKILLER_CONFIG_FILE } from './project-paths';
 
 interface ErrnoException extends Error {
   code?: string;
@@ -111,7 +112,7 @@ export interface IAgentConfig {
 export interface LoadedConfig {
   /** Agents to run by default, as specified by default_agents. */
   defaultAgents?: string[];
-  /** Root folder name (e.g., ".claude"). */
+  /** Root folder name (e.g., ".agents"). */
   rootFolder?: string;
   /** Per-agent configuration overrides. */
   agentConfigs: Record<string, IAgentConfig>;
@@ -127,7 +128,7 @@ export interface LoadedConfig {
   skills?: SkillsConfig;
   /** Rules configuration section for filtering markdown files. */
   rules?: RulesConfig;
-  /** Whether to enable nested rule loading from nested .claude directories. */
+  /** Whether to enable nested rule loading from nested .agents directories. */
   nested?: boolean;
   /** Whether the nested option was explicitly provided in the config. */
   nestedDefined?: boolean;
@@ -157,8 +158,11 @@ export async function loadConfig(
   if (configPath) {
     configFile = path.resolve(configPath);
   } else {
-    // Try local .claude/skiller.toml first
-    const localConfigFile = path.join(projectRoot, '.claude', 'skiller.toml');
+    const localConfigFile = path.join(
+      projectRoot,
+      CANONICAL_SKILLER_DIR,
+      SKILLER_CONFIG_FILE,
+    );
     try {
       await fs.access(localConfigFile);
       configFile = localConfigFile;
@@ -298,12 +302,12 @@ export async function loadConfig(
   // Deprecation warnings for removed config options
   if ('generate_from_rules' in rawSkillsSection) {
     console.warn(
-      `[skiller] Warning: skills.generate_from_rules is deprecated and has no effect. Skills are now edited directly in .claude/skills/`,
+      `[skiller] Warning: skills.generate_from_rules is deprecated and has no effect. Local rule sources in .agents/rules/ compile automatically into .agents/skills/.`,
     );
   }
   if ('prune' in rawSkillsSection) {
     console.warn(
-      `[skiller] Warning: skills.prune is deprecated and has no effect. Skills in .claude/skills/ are never auto-deleted.`,
+      `[skiller] Warning: skills.prune is deprecated and has no effect. Skills in .agents/skills/ are never auto-deleted.`,
     );
   }
 

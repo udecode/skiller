@@ -258,5 +258,26 @@ Content`;
         alwaysApply: true,
       });
     });
+
+    it('should handle unquoted string values that contain colons', () => {
+      const content = `---
+name: linear
+description: Work a Linear ticket end-to-end: sync main, branch, implement bug fixes or features, verify in browser, show screenshots in-thread, and update Linear.
+argument-hint: "[Linear issue id/link]"
+disable-model-invocation: true
+---
+# Work Linear Ticket`;
+
+      const result = parseFrontmatter(content);
+
+      expect(result.rawFrontmatter).toEqual({
+        name: 'linear',
+        description:
+          'Work a Linear ticket end-to-end: sync main, branch, implement bug fixes or features, verify in browser, show screenshots in-thread, and update Linear.',
+        'argument-hint': '[Linear issue id/link]',
+        'disable-model-invocation': true,
+      });
+      expect(result.body).toBe('# Work Linear Ticket');
+    });
   });
 });

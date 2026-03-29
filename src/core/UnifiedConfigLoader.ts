@@ -5,6 +5,7 @@ import * as FileSystemUtils from './FileSystemUtils';
 import { matchesPattern, normalizePattern } from './FileSystemUtils';
 import { sha256, stableJson } from './hash';
 import { concatenateRules } from './RuleProcessor';
+import { CANONICAL_SKILLER_DIR, SKILLER_CONFIG_FILE } from './project-paths';
 import type {
   ConfigDiagnostic,
   ConfigMeta,
@@ -46,10 +47,10 @@ export interface UnifiedLoadOptions {
 export async function loadUnifiedConfig(
   options: UnifiedLoadOptions,
 ): Promise<SkillerUnifiedConfig> {
-  // Resolve the effective .claude directory (local or global), mirroring the main loader behavior
+  // Resolve the effective .agents directory (local or global), mirroring the main loader behavior
   const resolvedSkillerDir =
     (await FileSystemUtils.findSkillerDir(options.projectRoot, true)) ||
-    path.join(options.projectRoot, '.claude');
+    path.join(options.projectRoot, CANONICAL_SKILLER_DIR);
 
   const meta: ConfigMeta = {
     projectRoot: options.projectRoot,
@@ -64,7 +65,7 @@ export async function loadUnifiedConfig(
   let tomlRaw: unknown = {};
   const tomlFile = options.configPath
     ? path.resolve(options.configPath)
-    : path.join(meta.skillerDir, 'skiller.toml');
+    : path.join(meta.skillerDir, SKILLER_CONFIG_FILE);
   try {
     const text = await fs.readFile(tomlFile, 'utf8');
     tomlRaw = text.trim() ? parseTOML(text) : {};
@@ -119,7 +120,7 @@ export async function loadUnifiedConfig(
           severity: 'warning',
           code: 'SKILLS_DEPRECATED_OPTION',
           message:
-            'skills.generate_from_rules is deprecated and has no effect. Skills are now edited directly in .claude/skills/',
+            'skills.generate_from_rules is deprecated and has no effect. Local rule sources in .agents/rules/ compile automatically into .agents/skills/.',
           file: tomlFile,
         });
       }
@@ -128,7 +129,7 @@ export async function loadUnifiedConfig(
           severity: 'warning',
           code: 'SKILLS_DEPRECATED_OPTION',
           message:
-            'skills.prune is deprecated and has no effect. Skills in .claude/skills/ are never auto-deleted.',
+            'skills.prune is deprecated and has no effect. Skills in .agents/skills/ are never auto-deleted.',
           file: tomlFile,
         });
       }

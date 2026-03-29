@@ -6,12 +6,13 @@ import { MAX_RECURSION_DEPTH, logVerboseInfo, logWarn } from '../constants';
 import { parseFrontmatter } from './FrontmatterParser';
 import {
   isClaudeManifestEntry,
-  isPluginManifestEntry,
   loadSkillsManifestEntries,
+  loadLocalSkillNames,
   type ClaudeSkillsManifestEntry,
   type SkillsManifestEntry,
   writeSkillsManifestEntries,
 } from './SkillsManifest';
+import { CANONICAL_SKILLER_DIR } from './project-paths';
 
 export interface SyncClaudeProjectArgs {
   projectRoot: string;
@@ -29,7 +30,6 @@ interface ExpectedItem {
 }
 
 type ManagedEntry = ClaudeSkillsManifestEntry;
-const LEGACY_PLUGIN_MARKER_FILENAME = '.skiller-plugin.json';
 
 function sanitizeId(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, '_');
@@ -187,53 +187,31 @@ async function writeMarkdownAsSkill(
   await fs.writeFile(path.join(destDir, 'SKILL.md'), next, 'utf8');
 }
 
-async function readPluginManagedDestNames(
-  projectRoot: string,
-  targetSkillsDir: string,
-): Promise<Set<string>> {
-  const names = new Set<string>();
-
-  for (const entry of await loadSkillsManifestEntries(
-    projectRoot,
-    targetSkillsDir,
-  )) {
-    if (isPluginManifestEntry(entry)) {
-      names.add(entry.destRelPath);
-    }
-  }
-
-  // Legacy: prior versions wrote per-skill plugin marker files. Treat any
-  // folder containing one as plugin-managed so project items can take over.
-  try {
-    const dirents = await fs.readdir(targetSkillsDir, { withFileTypes: true });
-    for (const d of dirents) {
-      if (!d.isDirectory()) continue;
-      try {
-        await fs.access(
-          path.join(targetSkillsDir, d.name, LEGACY_PLUGIN_MARKER_FILENAME),
-        );
-        names.add(d.name);
-      } catch {
-        // ignore
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return names;
-}
-
 async function discoverLocalSkillNames(
   projectRoot: string,
 ): Promise<Set<string>> {
-  const localSkillsDir = path.join(projectRoot, '.claude', 'skills');
-  if (!(await fileExists(localSkillsDir))) return new Set();
+  return new Set(await loadLocalSkillNames(projectRoot));
+}
+
+async function discoverCanonicalSkillNames(
+  projectRoot: string,
+): Promise<Set<string>> {
+  const skillsRoot = path.join(projectRoot, CANONICAL_SKILLER_DIR, 'skills');
+  if (!(await fileExists(skillsRoot))) return new Set<string>();
 
   const names = new Set<string>();
 
-  async function walk(current: string, depth: number): Promise<void> {
+  async function walk(
+    current: string,
+    rel: string,
+    depth: number,
+  ): Promise<void> {
     if (depth >= MAX_RECURSION_DEPTH) return;
+
+    if (rel && (await fileExists(path.join(current, 'SKILL.md')))) {
+      names.add(rel.split('/').filter(Boolean).map(sanitizeId).join('-'));
+      return;
+    }
 
     let entries: Dirent[];
     try {
@@ -242,25 +220,14 @@ async function discoverLocalSkillNames(
       return;
     }
 
-    const hasSkillMd = entries.some((e) => e.isFile() && e.name === 'SKILL.md');
-    if (hasSkillMd) {
-      const rel = path.relative(localSkillsDir, current).replace(/\\/g, '/');
-      const segments = rel.split('/').filter(Boolean);
-      if (segments.length > 0) {
-        names.add(segments.map(sanitizeId).join('-'));
-      } else {
-        names.add(sanitizeId(path.basename(current)));
-      }
-      return;
-    }
-
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      await walk(path.join(current, entry.name), depth + 1);
+      const nextRel = rel ? `${rel}/${entry.name}` : entry.name;
+      await walk(path.join(current, entry.name), nextRel, depth + 1);
     }
   }
 
-  await walk(localSkillsDir, 0);
+  await walk(skillsRoot, '', 0);
   return names;
 }
 
@@ -270,6 +237,7 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
   const { projectRoot, targetSkillsDirs, verbose, dryRun } = args;
 
   const localSkillNames = await discoverLocalSkillNames(projectRoot);
+  const canonicalSkillNames = await discoverCanonicalSkillNames(projectRoot);
 
   const commands = await discoverCommandFiles(projectRoot);
   const agents = await discoverAgentFiles(projectRoot);
@@ -332,10 +300,34 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
     const managedDest = new Set<string>(
       managedEntries.map((e) => e.destRelPath),
     );
+    const reservedCanonicalNames = new Set<string>([
+      ...canonicalSkillNames,
+      ...localSkillNames,
+    ]);
+    const canonicalSkillsDir = path.join(
+      projectRoot,
+      CANONICAL_SKILLER_DIR,
+      'skills',
+    );
 
-    const pluginManagedDest = targetExists
-      ? await readPluginManagedDestNames(projectRoot, targetSkillsDir)
-      : new Set<string>();
+    if (path.resolve(targetSkillsDir) === path.resolve(canonicalSkillsDir)) {
+      for (const entry of managedEntries) {
+        reservedCanonicalNames.delete(entry.destRelPath);
+      }
+    }
+
+    const activeItems = sortedItems.filter((item) => {
+      if (!reservedCanonicalNames.has(item.baseName)) {
+        return true;
+      }
+
+      logVerboseInfo(
+        `Skipping claude ${item.sourceKind} '${item.baseName}' because canonical skills already own that name`,
+        verbose,
+        dryRun,
+      );
+      return false;
+    });
 
     const reserved = new Set<string>(localSkillNames);
 
@@ -349,9 +341,7 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
 
       for (const d of dirents) {
         if (!d.isDirectory()) continue;
-        // Reserve any existing folder we do not manage, except plugin-managed
-        // folders (project should be able to take those over).
-        if (!managedDest.has(d.name) && !pluginManagedDest.has(d.name)) {
+        if (!managedDest.has(d.name)) {
           reserved.add(d.name);
         }
       }
@@ -361,7 +351,7 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
     const assignedDestByItemKey = new Map<string, string>();
 
     // Preserve previous destinations when they are still available.
-    for (const item of sortedItems) {
+    for (const item of activeItems) {
       const prev = prevDestByItemKey.get(item.itemKey);
       if (!prev) continue;
       // Migration: previous versions used `claude__<name>`.
@@ -374,7 +364,7 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
     }
 
     // Assign baseName, otherwise namespace with "claude-".
-    for (const item of sortedItems) {
+    for (const item of activeItems) {
       if (assignedDestByItemKey.has(item.itemKey)) continue;
 
       const base = item.baseName;
@@ -394,7 +384,7 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
       taken.add(candidate);
     }
 
-    const assignedItems = sortedItems.map((item) => ({
+    const assignedItems = activeItems.map((item) => ({
       ...item,
       destRelPath: assignedDestByItemKey.get(item.itemKey) as string,
     }));
@@ -412,10 +402,7 @@ export async function syncClaudeProjectCommandsAndAgentsToSkillsDirs(
       const destDir = path.join(targetSkillsDir, destRelPath);
 
       if (await fileExists(destDir)) {
-        const isManagedByProject = managedDest.has(destRelPath);
-        const isManagedByPlugin = pluginManagedDest.has(destRelPath);
-
-        if (!isManagedByProject && !isManagedByPlugin) {
+        if (!managedDest.has(destRelPath)) {
           logWarn(
             `[claude] Destination exists but is not skiller-managed, skipping: ${destDir}`,
             dryRun,

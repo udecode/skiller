@@ -141,19 +141,13 @@ export async function walkSkillsTree(
           // This is a grouping directory, recurse into it
           await walk(entryPath, entryRelativePath, depth + 1);
         } else {
-          // Check if this directory has any .mdc files
-          const hasMdc = await hasAnyMdc(entryPath);
-
-          if (!hasMdc) {
-            // No SKILL.md, not a grouping dir, no .mdc files - delete it
-            try {
-              await fs.rm(entryPath, { recursive: true, force: true });
-              deleted.push(entryRelativePath);
-            } catch {
-              warnings.push(
-                `Failed to delete empty directory '${entryRelativePath}'`,
-              );
-            }
+          try {
+            await fs.rm(entryPath, { recursive: true, force: true });
+            deleted.push(entryRelativePath);
+          } catch {
+            warnings.push(
+              `Failed to delete empty directory '${entryRelativePath}'`,
+            );
           }
         }
       }

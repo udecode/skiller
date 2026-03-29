@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { Dirent } from 'fs';
+import { CANONICAL_SKILLER_DIR, LEGACY_SKILLER_DIR } from './project-paths';
 
 // Project-level manifest (stored in `.claude/.skiller.json`) that tracks what
 // Skiller installed into each target agent skills directory for this project.
@@ -33,6 +34,7 @@ export interface ClaudeSkillsManifestEntry {
 interface ProjectSkillsManifestFile {
   version: number;
   targets: Record<string, SkillsManifestEntry[]>;
+  localSkills?: string[];
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -161,6 +163,42 @@ function computeTargetKey(
   return normalizePathForKey(resolvedTarget);
 }
 
+function computeCompatibleTargetKeys(
+  projectRoot: string,
+  targetSkillsDir: string,
+): string[] {
+  const keys = new Set<string>([
+    computeTargetKey(projectRoot, targetSkillsDir),
+    normalizePathForKey(targetSkillsDir),
+  ]);
+
+  const resolvedTarget = path.resolve(targetSkillsDir);
+  const canonicalSkillsDir = path.resolve(
+    projectRoot,
+    CANONICAL_SKILLER_DIR,
+    'skills',
+  );
+  const legacySkillsDir = path.resolve(
+    projectRoot,
+    LEGACY_SKILLER_DIR,
+    'skills',
+  );
+
+  if (
+    resolvedTarget === canonicalSkillsDir ||
+    resolvedTarget === legacySkillsDir
+  ) {
+    const aliasTarget =
+      resolvedTarget === canonicalSkillsDir
+        ? legacySkillsDir
+        : canonicalSkillsDir;
+    keys.add(computeTargetKey(projectRoot, aliasTarget));
+    keys.add(normalizePathForKey(aliasTarget));
+  }
+
+  return [...keys];
+}
+
 function parseProjectTargets(
   raw: unknown,
 ): Record<string, SkillsManifestEntry[]> {
@@ -180,6 +218,44 @@ function parseProjectTargets(
   }
 
   return out;
+}
+
+function parseLocalSkills(raw: unknown): string[] {
+  if (!raw || typeof raw !== 'object') return [];
+  const obj = raw as Record<string, unknown>;
+  if (!Array.isArray(obj.localSkills)) return [];
+
+  return [
+    ...new Set(
+      obj.localSkills.filter((v): v is string => typeof v === 'string'),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+}
+
+async function readProjectManifestRaw(
+  projectRoot: string,
+): Promise<unknown | null> {
+  const canonicalManifestPath = path.join(
+    projectRoot,
+    CANONICAL_SKILLER_DIR,
+    SKILLS_MANIFEST_FILENAME,
+  );
+  const legacyManifestPath = path.join(
+    projectRoot,
+    LEGACY_SKILLER_DIR,
+    SKILLS_MANIFEST_FILENAME,
+  );
+
+  for (const manifestPath of [canonicalManifestPath, legacyManifestPath]) {
+    if (!(await fileExists(manifestPath))) continue;
+    try {
+      return JSON.parse(await fs.readFile(manifestPath, 'utf8')) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 }
 
 function parseLegacyPluginEntries(raw: unknown): PluginSkillsManifestEntry[] {
@@ -313,31 +389,61 @@ export async function loadSkillsManifestEntries(
   projectRoot: string,
   targetSkillsDir: string,
 ): Promise<SkillsManifestEntry[]> {
-  const projectClaudeDir = path.join(projectRoot, '.claude');
-  const projectManifestPath = path.join(
-    projectClaudeDir,
-    SKILLS_MANIFEST_FILENAME,
-  );
-
-  const preferredTargetKey = computeTargetKey(projectRoot, targetSkillsDir);
-  const absoluteTargetKey = normalizePathForKey(targetSkillsDir);
-
-  if (await fileExists(projectManifestPath)) {
-    try {
-      const raw = JSON.parse(
-        await fs.readFile(projectManifestPath, 'utf8'),
-      ) as unknown;
-      const targets = parseProjectTargets(raw);
-      const entries =
-        targets[preferredTargetKey] ?? targets[absoluteTargetKey] ?? [];
-      return normalizeEntries(entries);
-    } catch {
-      return [];
+  const raw = await readProjectManifestRaw(projectRoot);
+  if (raw) {
+    const targets = parseProjectTargets(raw);
+    for (const key of computeCompatibleTargetKeys(
+      projectRoot,
+      targetSkillsDir,
+    )) {
+      const entries = targets[key];
+      if (entries) return normalizeEntries(entries);
     }
+    return [];
   }
 
   // Legacy migration: prior versions stored manifests in the target skills dir.
   return await loadLegacyTargetSkillsManifestEntries(targetSkillsDir);
+}
+
+export async function loadLocalSkillNames(
+  projectRoot: string,
+): Promise<string[]> {
+  const raw = await readProjectManifestRaw(projectRoot);
+  return parseLocalSkills(raw);
+}
+
+export async function writeLocalSkillNames(
+  projectRoot: string,
+  localSkillNames: string[],
+  dryRun: boolean,
+): Promise<void> {
+  const projectSkillerDir = path.join(projectRoot, CANONICAL_SKILLER_DIR);
+  const projectManifestPath = path.join(
+    projectSkillerDir,
+    SKILLS_MANIFEST_FILENAME,
+  );
+
+  const raw = await readProjectManifestRaw(projectRoot);
+  const existingTargets = parseProjectTargets(raw);
+  const nextLocalSkills = [...new Set(localSkillNames)].sort((a, b) =>
+    a.localeCompare(b),
+  );
+
+  if (dryRun) return;
+
+  await fs.mkdir(projectSkillerDir, { recursive: true });
+
+  const manifest: ProjectSkillsManifestFile = {
+    version: SKILLS_MANIFEST_VERSION,
+    targets: existingTargets,
+    localSkills: nextLocalSkills,
+  };
+
+  await fs.writeFile(
+    projectManifestPath,
+    JSON.stringify(manifest, null, 2) + '\n',
+  );
 }
 
 export async function writeSkillsManifestEntries(
@@ -348,7 +454,7 @@ export async function writeSkillsManifestEntries(
 ): Promise<void> {
   const normalized = normalizeEntries(entries);
 
-  const projectClaudeDir = path.join(projectRoot, '.claude');
+  const projectClaudeDir = path.join(projectRoot, CANONICAL_SKILLER_DIR);
   const projectManifestPath = path.join(
     projectClaudeDir,
     SKILLS_MANIFEST_FILENAME,
@@ -358,16 +464,9 @@ export async function writeSkillsManifestEntries(
   const absoluteTargetKey = normalizePathForKey(targetSkillsDir);
 
   let existingTargets: Record<string, SkillsManifestEntry[]> = {};
-  if (await fileExists(projectManifestPath)) {
-    try {
-      const raw = JSON.parse(
-        await fs.readFile(projectManifestPath, 'utf8'),
-      ) as unknown;
-      existingTargets = parseProjectTargets(raw);
-    } catch {
-      existingTargets = {};
-    }
-  }
+  const raw = await readProjectManifestRaw(projectRoot);
+  existingTargets = parseProjectTargets(raw);
+  const existingLocalSkills = parseLocalSkills(raw);
 
   if (normalized.length === 0) {
     delete existingTargets[preferredTargetKey];
@@ -398,6 +497,7 @@ export async function writeSkillsManifestEntries(
     const manifest: ProjectSkillsManifestFile = {
       version: SKILLS_MANIFEST_VERSION,
       targets: nextTargets,
+      localSkills: existingLocalSkills,
     };
     await fs.writeFile(
       projectManifestPath,
