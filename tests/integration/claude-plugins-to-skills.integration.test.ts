@@ -95,7 +95,6 @@ enabled = true
               },
             ],
           },
-          localSkills: [],
         },
         null,
         2,

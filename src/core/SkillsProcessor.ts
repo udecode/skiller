@@ -1,3 +1,4 @@
+import type { Dirent } from 'fs';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as yaml from 'js-yaml';
@@ -13,9 +14,14 @@ import { walkSkillsTree, copySkillsDirectory } from './SkillsUtils';
 import { parseFrontmatter } from './FrontmatterParser';
 import type { IAgent } from '../agents/IAgent';
 import {
-  adoptSkillerOwnedSkillNames,
+  isClaudeManifestEntry,
+  loadSkillsManifestEntries,
+  scrubLegacyLocalSkillsManifest,
+  writeSkillsManifestEntries,
+  type SkillsManifestEntry,
+} from './SkillsManifest';
+import {
   resolveSkillOwnership,
-  syncSkillerOwnedSkillNamesFromRules,
 } from './SkillOwnership';
 
 const LEGACY_CODEX_SKILLS_PATH = path.join('.codex', 'skills');
@@ -628,6 +634,279 @@ async function writeFileIfChanged(
   return true;
 }
 
+async function readNormalizedRuleSourceContent(
+  rulePath: string,
+): Promise<string | null> {
+  try {
+    return normalizeRuleSourceContent(await fs.readFile(rulePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function getFrontmatterBlock(content: string): string | null {
+  const match = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(content);
+  return match ? match[1] : null;
+}
+
+function stripQuotedValue(value: string): string {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function extractSkillerSourceRelPathFromFrontmatter(
+  content: string,
+): string | null {
+  const block = getFrontmatterBlock(content);
+  if (!block) return null;
+
+  let metadataIndent: number | null = null;
+  let skillerIndent: number | null = null;
+
+  for (const line of block.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const indent = line.length - line.trimStart().length;
+
+    if (
+      metadataIndent !== null &&
+      indent <= metadataIndent &&
+      trimmed !== 'metadata:'
+    ) {
+      metadataIndent = null;
+      skillerIndent = null;
+    }
+
+    if (
+      skillerIndent !== null &&
+      indent <= skillerIndent &&
+      trimmed !== 'skiller:'
+    ) {
+      skillerIndent = null;
+    }
+
+    if (trimmed === 'metadata:') {
+      metadataIndent = indent;
+      skillerIndent = null;
+      continue;
+    }
+
+    if (metadataIndent !== null && trimmed === 'skiller:') {
+      skillerIndent = indent;
+      continue;
+    }
+
+    if (skillerIndent !== null && trimmed.startsWith('source:')) {
+      return stripQuotedValue(trimmed.slice('source:'.length));
+    }
+  }
+
+  return null;
+}
+
+async function pruneDuplicateClaudeAliasRules(
+  projectRoot: string,
+  targetSkillsDirs: string[],
+  verbose: boolean,
+  dryRun: boolean,
+): Promise<string[]> {
+  const rulesDir = path.join(projectRoot, '.agents', 'rules');
+  const canonicalSkillsDir = path.join(projectRoot, '.agents', 'skills');
+
+  let ruleEntries: Dirent[];
+  try {
+    ruleEntries = await fs.readdir(rulesDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const pruned: string[] = [];
+
+  for (const entry of ruleEntries) {
+    if (!entry.isFile() || !entry.name.endsWith('.mdc')) continue;
+
+    const aliasName = path.basename(entry.name, '.mdc');
+    if (!aliasName.startsWith('claude-')) continue;
+
+    const baseName = aliasName.slice('claude-'.length);
+    if (!baseName) continue;
+
+    const aliasRulePath = path.join(rulesDir, `${aliasName}.mdc`);
+    const baseRulePath = path.join(rulesDir, `${baseName}.mdc`);
+
+    const [aliasRuleContent, baseRuleContent] = await Promise.all([
+      readNormalizedRuleSourceContent(aliasRulePath),
+      readNormalizedRuleSourceContent(baseRulePath),
+    ]);
+
+    if (!aliasRuleContent || !baseRuleContent) continue;
+    if (aliasRuleContent !== baseRuleContent) continue;
+
+    const deletePaths = [
+      aliasRulePath,
+      path.join(canonicalSkillsDir, aliasName),
+      path.join(projectRoot, LEGACY_CODEX_SKILLS_PATH, aliasName),
+      ...targetSkillsDirs.map((skillsDir) => path.join(skillsDir, aliasName)),
+    ];
+
+    if (!dryRun) {
+      await Promise.all(
+        deletePaths.map((deletePath) =>
+          fs.rm(deletePath, { recursive: true, force: true }),
+        ),
+      );
+    }
+
+    pruned.push(aliasName);
+    logVerboseInfo(
+      dryRun
+        ? `DRY RUN: Would prune stale claude alias '${aliasName}' because '${baseName}' already exists with identical local rule content`
+        : `Pruned stale claude alias '${aliasName}' because '${baseName}' already exists with identical local rule content`,
+      verbose,
+      dryRun,
+    );
+  }
+
+  return pruned;
+}
+
+async function pruneCompiledSkillsWithMissingRuleSources(
+  projectRoot: string,
+  targetSkillsDirs: string[],
+  verbose: boolean,
+  dryRun: boolean,
+): Promise<string[]> {
+  const canonicalSkillsDir = path.join(projectRoot, '.agents', 'skills');
+
+  let skillEntries: Dirent[];
+  try {
+    skillEntries = await fs.readdir(canonicalSkillsDir, {
+      withFileTypes: true,
+    });
+  } catch {
+    return [];
+  }
+
+  const pruned: string[] = [];
+
+  for (const entry of skillEntries) {
+    if (!entry.isDirectory()) continue;
+
+    const skillName = entry.name;
+    const skillDir = path.join(canonicalSkillsDir, skillName);
+    const skillMdPath = path.join(skillDir, SKILL_MD_FILENAME);
+
+    let skillMdContent: string;
+    try {
+      skillMdContent = await fs.readFile(skillMdPath, 'utf8');
+    } catch {
+      continue;
+    }
+
+    const sourceRelPath =
+      extractSkillerSourceRelPathFromFrontmatter(skillMdContent);
+
+    if (!sourceRelPath?.startsWith('.agents/rules/')) continue;
+
+    const sourcePath = path.resolve(projectRoot, sourceRelPath);
+    if (await pathExists(sourcePath)) continue;
+
+    const deletePaths = [
+      skillDir,
+      path.join(projectRoot, LEGACY_CODEX_SKILLS_PATH, skillName),
+      ...targetSkillsDirs.map((skillsDir) => path.join(skillsDir, skillName)),
+    ];
+
+    if (!dryRun) {
+      await Promise.all(
+        deletePaths.map((deletePath) =>
+          fs.rm(deletePath, { recursive: true, force: true }),
+        ),
+      );
+    }
+
+    pruned.push(skillName);
+    logVerboseInfo(
+      dryRun
+        ? `DRY RUN: Would prune compiled skill '${skillName}' because its source rule is missing: ${sourceRelPath}`
+        : `Pruned compiled skill '${skillName}' because its source rule is missing: ${sourceRelPath}`,
+      verbose,
+      dryRun,
+    );
+  }
+
+  return pruned;
+}
+
+async function cleanupLegacyClaudeManagedSkillMirrors(
+  projectRoot: string,
+  targetSkillsDirs: string[],
+  verbose: boolean,
+  dryRun: boolean,
+): Promise<string[]> {
+  const cleaned: string[] = [];
+
+  for (const targetSkillsDir of targetSkillsDirs) {
+    const entries = await loadSkillsManifestEntries(
+      projectRoot,
+      targetSkillsDir,
+    );
+    if (entries.length === 0) continue;
+
+    const legacyClaudeEntries = entries.filter(isClaudeManifestEntry);
+    if (legacyClaudeEntries.length === 0) continue;
+
+    const nextEntries: SkillsManifestEntry[] = entries.filter(
+      (entry) => !isClaudeManifestEntry(entry),
+    );
+    const legacyDestPaths = [
+      ...new Set(legacyClaudeEntries.map((entry) => entry.destRelPath)),
+    ];
+
+    if (!dryRun) {
+      await Promise.all(
+        legacyDestPaths.map((destRelPath) =>
+          fs.rm(path.join(targetSkillsDir, destRelPath), {
+            recursive: true,
+            force: true,
+          }),
+        ),
+      );
+    }
+
+    await writeSkillsManifestEntries(
+      projectRoot,
+      targetSkillsDir,
+      nextEntries,
+      dryRun,
+    );
+
+    cleaned.push(
+      ...legacyDestPaths.map(
+        (destRelPath) => `${targetSkillsDir}:${destRelPath}`,
+      ),
+    );
+    for (const destRelPath of legacyDestPaths) {
+      logVerboseInfo(
+        dryRun
+          ? `DRY RUN: Would remove legacy claude-managed skill mirror '${destRelPath}' from ${targetSkillsDir}`
+          : `Removed legacy claude-managed skill mirror '${destRelPath}' from ${targetSkillsDir}`,
+        verbose,
+        dryRun,
+      );
+    }
+  }
+
+  return cleaned;
+}
+
 export async function extractLocalRulesFromCanonicalSkills(
   projectRoot: string,
   verbose: boolean,
@@ -646,8 +925,6 @@ export async function extractLocalRulesFromCanonicalSkills(
   }
 
   const entries = await fs.readdir(skillsDir, { withFileTypes: true });
-  const adoptedNames: string[] = [];
-
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
 
@@ -691,16 +968,11 @@ export async function extractLocalRulesFromCanonicalSkills(
         );
       }
       extracted.push(skillName);
-      adoptedNames.push(skillName);
     } catch (err) {
       warnings.push(
         `Failed to extract local rule source for ${skillName}: ${(err as Error).message}`,
       );
     }
-  }
-
-  if (adoptedNames.length > 0) {
-    await adoptSkillerOwnedSkillNames(projectRoot, adoptedNames, dryRun);
   }
 
   return { extracted, warnings };
@@ -728,8 +1000,6 @@ export async function compileRulesToSkills(
   const ruleFiles = entries.filter((entry) => {
     return entry.isFile() && entry.name.endsWith('.mdc');
   });
-  const adoptedNames: string[] = [];
-
   for (const ruleFile of ruleFiles) {
     const skillName = path.basename(ruleFile.name, '.mdc');
     if (ownership.upstreamOwned.has(skillName)) {
@@ -795,11 +1065,6 @@ export async function compileRulesToSkills(
     }
 
     compiled.push(skillName);
-    adoptedNames.push(skillName);
-  }
-
-  if (adoptedNames.length > 0) {
-    await adoptSkillerOwnedSkillNames(projectRoot, adoptedNames, dryRun);
   }
 
   return { compiled, warnings };
@@ -1208,15 +1473,36 @@ export async function propagateSkills(
     return;
   }
 
+  // Determine canonical skills directory, with legacy fallback for migration.
+  const skillsDir = await resolveProjectSkillsDir(projectRoot, skillerDir);
+
+  // Compute destinations up-front so cleanup + legacy codex migration can de-duplicate targets.
+  const destinationPaths = new Set<string>();
+  for (const agent of agents) {
+    if (agent.supportsNativeSkills?.() && agent.getSkillsPath) {
+      const targetPath = agent.getSkillsPath(projectRoot);
+      if (targetPath && targetPath !== skillsDir) {
+        destinationPaths.add(targetPath);
+      }
+    }
+  }
+
   if (skillerDir) {
-    const extractedResult = await extractLocalRulesFromCanonicalSkills(
+    await scrubLegacyLocalSkillsManifest(projectRoot, dryRun);
+
+    await pruneCompiledSkillsWithMissingRuleSources(
       projectRoot,
+      [...destinationPaths],
       verbose,
       dryRun,
     );
-    for (const warning of extractedResult.warnings) {
-      logWarn(warning, dryRun);
-    }
+
+    await pruneDuplicateClaudeAliasRules(
+      projectRoot,
+      [...destinationPaths],
+      verbose,
+      dryRun,
+    );
 
     const compileResult = await compileRulesToSkills(
       skillerDir,
@@ -1227,26 +1513,27 @@ export async function propagateSkills(
     for (const warning of compileResult.warnings) {
       logWarn(warning, dryRun);
     }
-
-    await syncSkillerOwnedSkillNamesFromRules(projectRoot, dryRun);
-  }
-
-  // Determine canonical skills directory, with legacy fallback for migration.
-  const skillsDir = await resolveProjectSkillsDir(projectRoot, skillerDir);
-
-  // Compute destinations up-front so legacy codex migration can de-duplicate targets.
-  const destinationPaths = new Set<string>();
-  for (const agent of agents) {
-    if (agent.supportsNativeSkills?.() && agent.getSkillsPath) {
-      const targetPath = agent.getSkillsPath(projectRoot);
-      if (targetPath && targetPath !== skillsDir) {
-        // Deduplicate shared paths
-        destinationPaths.add(targetPath);
-      }
-    }
   }
 
   await migrateLegacyCodexSkillsDir(skillsDir, destinationPaths);
+
+  if (destinationPaths.size > 0) {
+    await cleanupLegacyClaudeManagedSkillMirrors(
+      projectRoot,
+      [...destinationPaths],
+      verbose,
+      dryRun,
+    );
+  }
+
+  if (skillerDir) {
+    await pruneDuplicateClaudeAliasRules(
+      projectRoot,
+      [...destinationPaths],
+      verbose,
+      dryRun,
+    );
+  }
 
   // Check if skills directory exists
   let skillsDirExists = true;
@@ -1325,20 +1612,6 @@ export async function propagateSkills(
         }
       }
     }
-  }
-
-  // Sync project Claude commands + agents as skills into agent skills dirs.
-  // This intentionally does NOT write into the canonical .agents/skills source-of-truth.
-  if (destinationPaths.size > 0) {
-    const { syncClaudeProjectCommandsAndAgentsToSkillsDirs } = await import(
-      './ClaudeProjectSync'
-    );
-    await syncClaudeProjectCommandsAndAgentsToSkillsDirs({
-      projectRoot,
-      targetSkillsDirs: [...destinationPaths],
-      verbose,
-      dryRun,
-    });
   }
 }
 

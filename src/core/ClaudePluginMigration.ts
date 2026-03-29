@@ -1,8 +1,14 @@
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { CANONICAL_SKILLER_DIR, LEGACY_SKILLER_DIR } from './project-paths';
 import { SKILLS_MANIFEST_FILENAME } from './SkillsManifest';
+import { walkSkillsTree } from './SkillsUtils';
+import { parseFrontmatter } from './FrontmatterParser';
+
+const execFileAsync = promisify(execFile);
 
 export interface ClaudePluginMigrationInstall {
   source: string;
@@ -18,6 +24,19 @@ export interface ClaudePluginMigrationUnresolved {
 export interface ClaudePluginMigrationPlan {
   installs: ClaudePluginMigrationInstall[];
   unresolved: ClaudePluginMigrationUnresolved[];
+}
+
+export interface ClaudePluginMigrationSourceInspection {
+  installable: boolean;
+  auxiliarySkillNames?: string[];
+  publishedSkillNames?: string[];
+  reason?: string;
+}
+
+export interface PlanClaudePluginSkillsMigrationOptions {
+  inspectSource?: (
+    source: string,
+  ) => Promise<ClaudePluginMigrationSourceInspection>;
 }
 
 interface MarketplaceRecord {
@@ -71,6 +90,148 @@ function normalizeInstallSource(source: unknown): string | null {
   }
 
   return null;
+}
+
+function normalizeCloneSource(source: string): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(source) || source.startsWith('git@')) {
+    return source;
+  }
+
+  if (/^[^/\s]+\/[^/\s]+$/.test(source)) {
+    return `https://github.com/${source}.git`;
+  }
+
+  return source;
+}
+
+function normalizeSkillNameForDir(value: string): string {
+  return value.replace(/:/g, '-').trim();
+}
+
+function extractAuxiliarySkillNames(skillMd: string): string[] {
+  const names = new Set<string>();
+  const pattern = /\b[a-z0-9-]+:[a-z0-9-]+:([a-z0-9-]+)\b/g;
+
+  for (const match of skillMd.toLowerCase().matchAll(pattern)) {
+    const candidate = match[1]?.trim();
+    if (!candidate || !/[a-z]/.test(candidate)) continue;
+    names.add(candidate);
+  }
+
+  return [...names];
+}
+
+function formatInspectionError(source: string, err: unknown): string {
+  if (typeof err === 'object' && err !== null) {
+    const stderr = 'stderr' in err ? (err as { stderr?: string }).stderr : '';
+    const stdout = 'stdout' in err ? (err as { stdout?: string }).stdout : '';
+    const message =
+      stderr?.trim() ||
+      stdout?.trim() ||
+      ('message' in err ? String((err as { message?: unknown }).message) : '');
+
+    if (message.length > 0) {
+      return `Failed to inspect resolved source ${source}: ${message.split('\n')[0]}`;
+    }
+  }
+
+  return `Failed to inspect resolved source ${source}`;
+}
+
+async function inspectSkillsInstallSource(
+  source: string,
+): Promise<ClaudePluginMigrationSourceInspection> {
+  const tmpDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'skiller-plugin-source-'),
+  );
+  const repoDir = path.join(tmpDir, 'repo');
+
+  try {
+    await execFileAsync('git', [
+      'clone',
+      '--depth',
+      '1',
+      '--quiet',
+      normalizeCloneSource(source),
+      repoDir,
+    ]);
+
+    const { skills } = await walkSkillsTree(repoDir);
+    const publishedSkillNames = new Set<string>();
+    const auxiliarySkillNames = new Set<string>();
+
+    for (const skill of skills) {
+      try {
+        const skillMd = await fs.readFile(
+          path.join(skill.path, 'SKILL.md'),
+          'utf8',
+        );
+        const { frontmatter } = parseFrontmatter(skillMd);
+
+        if (frontmatter?.name && frontmatter.description) {
+          publishedSkillNames.add(
+            normalizeSkillNameForDir(String(frontmatter.name)),
+          );
+          for (const auxiliaryName of extractAuxiliarySkillNames(skillMd)) {
+            auxiliarySkillNames.add(auxiliaryName);
+          }
+        }
+      } catch {
+        // Keep scanning. One malformed skill should not hide valid siblings.
+      }
+    }
+
+    if (publishedSkillNames.size > 0) {
+      return {
+        installable: true,
+        auxiliarySkillNames: [...auxiliarySkillNames].sort((a, b) =>
+          a.localeCompare(b),
+        ),
+        publishedSkillNames: [...publishedSkillNames].sort((a, b) =>
+          a.localeCompare(b),
+        ),
+      };
+    }
+
+    return {
+      installable: false,
+      reason: `Resolved source ${source} has no valid SKILL.md files with name and description`,
+    };
+  } catch (err) {
+    return {
+      installable: false,
+      reason: formatInspectionError(source, err),
+    };
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+}
+
+export async function listClaudePluginAuxiliaryRuleNames(
+  sources: string[],
+  options: PlanClaudePluginSkillsMigrationOptions = {},
+): Promise<string[]> {
+  const inspectSource = options.inspectSource ?? inspectSkillsInstallSource;
+  const auxiliarySkillNames = new Set<string>();
+
+  for (const source of [...new Set(sources)].sort((a, b) =>
+    a.localeCompare(b),
+  )) {
+    const inspection = await inspectSource(source);
+    if (!inspection.installable) continue;
+
+    const published = new Set(
+      (inspection.publishedSkillNames ?? []).map(normalizeSkillNameForDir),
+    );
+
+    for (const auxiliaryName of inspection.auxiliarySkillNames ?? []) {
+      const normalized = normalizeSkillNameForDir(auxiliaryName);
+      if (!normalized || published.has(normalized)) continue;
+      auxiliarySkillNames.add(normalized);
+    }
+  }
+
+  return [...auxiliarySkillNames].sort((a, b) => a.localeCompare(b));
 }
 
 async function readEnabledPluginIds(projectRoot: string): Promise<string[]> {
@@ -246,7 +407,9 @@ function sortPlan(
 
 export async function planClaudePluginSkillsMigration(
   projectRoot: string,
+  options: PlanClaudePluginSkillsMigrationOptions = {},
 ): Promise<ClaudePluginMigrationPlan> {
+  const inspectSource = options.inspectSource ?? inspectSkillsInstallSource;
   const pluginIds = new Set<string>([
     ...(await readEnabledPluginIds(projectRoot)),
     ...(await readManifestPluginIds(projectRoot)),
@@ -269,6 +432,10 @@ export async function planClaudePluginSkillsMigration(
   const pluginCatalogCache = new Map<
     string,
     Record<string, PluginDescriptor>
+  >();
+  const sourceInspectionCache = new Map<
+    string,
+    ClaudePluginMigrationSourceInspection
   >();
 
   for (const pluginId of [...pluginIds].sort((a, b) => a.localeCompare(b))) {
@@ -300,6 +467,22 @@ export async function planClaudePluginSkillsMigration(
       unresolved.push({
         pluginId,
         reason: `No repo or URL source could be inferred for marketplace ${parts.marketplaceId}`,
+      });
+      continue;
+    }
+
+    let inspection = sourceInspectionCache.get(resolvedSource);
+    if (!inspection) {
+      inspection = await inspectSource(resolvedSource);
+      sourceInspectionCache.set(resolvedSource, inspection);
+    }
+
+    if (!inspection.installable) {
+      unresolved.push({
+        pluginId,
+        reason:
+          inspection.reason ??
+          `Resolved source ${resolvedSource} is not installable through skills`,
       });
       continue;
     }

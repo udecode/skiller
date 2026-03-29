@@ -7,7 +7,6 @@ import {
   PROJECT_AGENTS_FILE,
   SKILLER_CONFIG_FILE,
 } from './project-paths';
-import { loadLocalSkillNames, writeLocalSkillNames } from './SkillsManifest';
 import { parseFrontmatter } from './FrontmatterParser';
 
 export interface ResolvedSkillOwnership {
@@ -281,6 +280,44 @@ async function planDirectoryMigration(
   }
 }
 
+async function planLegacySkillsMigration(
+  legacySkillsDir: string,
+  canonicalSkillsDir: string,
+  plannedWrites: Map<string, Buffer>,
+  deletePaths: Set<string>,
+  conflicts: string[],
+): Promise<void> {
+  if (!(await pathExists(legacySkillsDir))) return;
+
+  const entries = await fs.readdir(legacySkillsDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const sourceDir = path.join(legacySkillsDir, entry.name);
+    const destinationDir = path.join(canonicalSkillsDir, entry.name);
+
+    if (await pathExists(destinationDir)) {
+      // Canonical .agents/skills already owns this name now. Legacy
+      // .claude/skills duplicates are stale migration debris.
+      deletePaths.add(sourceDir);
+      continue;
+    }
+
+    await planDirectoryMigration(
+      sourceDir,
+      destinationDir,
+      plannedWrites,
+      deletePaths,
+      conflicts,
+    );
+  }
+
+  if (conflicts.length === 0) {
+    deletePaths.add(legacySkillsDir);
+  }
+}
+
 async function findRuleSkillFolders(dir: string): Promise<string[]> {
   const folders: string[] = [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -408,10 +445,7 @@ export async function resolveSkillOwnership(
   projectRoot: string,
 ): Promise<ResolvedSkillOwnership> {
   const upstreamOwned = await readUpstreamOwnedSkillNames(projectRoot);
-  const localOwned = new Set([
-    ...(await loadLocalSkillNames(projectRoot)),
-    ...(await readLocalRuleSkillNames(projectRoot)),
-  ]);
+  const localOwned = await readLocalRuleSkillNames(projectRoot);
   const canonicalSkillNames = await readCanonicalSkillNames(projectRoot);
 
   const allExplicitNames = new Set<string>([...upstreamOwned, ...localOwned]);
@@ -434,12 +468,11 @@ export async function resolveSkillOwnership(
     ...conflicts.map((name) => {
       const owners: string[] = [];
       if (upstreamOwned.has(name)) owners.push('skills-lock.json');
-      if (localOwned.has(name))
-        owners.push('local rules/.agents/.skiller.json');
+      if (localOwned.has(name)) owners.push('.agents/rules');
       return `Skill '${name}' has mixed ownership: ${owners.join(', ')}`;
     }),
     ...[...orphaned].map((name) => {
-      return `Canonical skill '${name}' is unmanaged; leaving it untouched because it is not in skills-lock.json, .agents/rules/${name}.mdc, or .agents/.skiller.json localSkills.`;
+      return `Canonical skill '${name}' is unmanaged; leaving it untouched because it is not in skills-lock.json or .agents/rules/${name}.mdc.`;
     }),
   ];
 
@@ -450,51 +483,6 @@ export async function resolveSkillOwnership(
     conflicts,
     warnings,
   };
-}
-
-export async function adoptSkillerOwnedSkillNames(
-  projectRoot: string,
-  skillNames: string[],
-  dryRun: boolean,
-): Promise<void> {
-  if (skillNames.length === 0) return;
-
-  const ownership = await resolveSkillOwnership(projectRoot);
-  const next = new Set(ownership.localOwned);
-
-  for (const name of skillNames) {
-    if (ownership.upstreamOwned.has(name)) continue;
-    next.add(name);
-  }
-
-  await writeLocalSkillNames(projectRoot, [...next], dryRun);
-}
-
-export async function syncSkillerOwnedSkillNamesFromRules(
-  projectRoot: string,
-  dryRun: boolean,
-): Promise<string[]> {
-  const rulesDir = path.join(projectRoot, CANONICAL_SKILLER_DIR, 'rules');
-  let ruleNames: string[] = [];
-
-  try {
-    const entries = await fs.readdir(rulesDir, { withFileTypes: true });
-    ruleNames = entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.mdc'))
-      .map((entry) => path.basename(entry.name, '.mdc'))
-      .sort((a, b) => a.localeCompare(b));
-  } catch {
-    ruleNames = [];
-  }
-
-  const upstreamOwned = await readUpstreamOwnedSkillNames(projectRoot);
-  const nextLocalSkillNames = ruleNames.filter((name) => {
-    return !upstreamOwned.has(name);
-  });
-
-  await writeLocalSkillNames(projectRoot, nextLocalSkillNames, dryRun);
-
-  return nextLocalSkillNames;
 }
 
 export async function migrateLegacyProjectState(
@@ -516,13 +504,10 @@ export async function migrateLegacyProjectState(
   const deletePaths = new Set<string>();
   const conflicts: string[] = [];
 
-  await planFileMigration(
-    path.join(legacyDir, '.skiller.json'),
-    path.join(canonicalDir, '.skiller.json'),
-    plannedWrites,
-    deletePaths,
-    conflicts,
-  );
+  const legacyManifestPath = path.join(legacyDir, '.skiller.json');
+  if (await pathExists(legacyManifestPath)) {
+    deletePaths.add(legacyManifestPath);
+  }
   const legacyConfigPath = path.join(legacyDir, SKILLER_CONFIG_FILE);
   if (await pathExists(legacyConfigPath)) {
     await planBufferWrite(
@@ -547,13 +532,15 @@ export async function migrateLegacyProjectState(
     deletePaths,
     conflicts,
   );
-  await planDirectoryMigration(
-    path.join(legacyDir, 'skills'),
-    canonicalSkillsDir,
-    plannedWrites,
-    deletePaths,
-    conflicts,
-  );
+  if (!(await pathExists(canonicalSkillsDir))) {
+    await planLegacySkillsMigration(
+      path.join(legacyDir, 'skills'),
+      canonicalSkillsDir,
+      plannedWrites,
+      deletePaths,
+      conflicts,
+    );
+  }
   await planLegacyRulesMigration(
     path.join(legacyDir, 'rules'),
     canonicalRulesDir,
@@ -567,6 +554,10 @@ export async function migrateLegacyProjectState(
     throw new Error(
       `Legacy .claude migration conflicts:\n- ${conflicts.join('\n- ')}`,
     );
+  }
+
+  if (plannedWrites.size === 0 && deletePaths.size === 0) {
+    return;
   }
 
   if (dryRun) return;

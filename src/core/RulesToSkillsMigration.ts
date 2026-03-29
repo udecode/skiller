@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { loadLocalSkillNames, writeLocalSkillNames } from './SkillsManifest';
+import { scrubLegacyLocalSkillsManifest } from './SkillsManifest';
 import { CANONICAL_SKILLER_DIR } from './project-paths';
 
 const SEARCH_API_BASE = process.env.SKILLS_API_URL || 'https://skills.sh';
@@ -158,17 +158,7 @@ export async function removeLocalRuleReplacementState(
   if (!dryRun) {
     await fs.rm(rulePath, { force: true });
   }
-
-  const localSkillNames = await loadLocalSkillNames(projectRoot);
-  if (!localSkillNames.includes(ruleName)) {
-    return;
-  }
-
-  await writeLocalSkillNames(
-    projectRoot,
-    localSkillNames.filter((name) => name !== ruleName),
-    dryRun,
-  );
+  await scrubLegacyLocalSkillsManifest(projectRoot, dryRun);
 }
 
 export async function planRulesToSkillsMigration(

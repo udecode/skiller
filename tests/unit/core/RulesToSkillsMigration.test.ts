@@ -184,10 +184,9 @@ describe('RulesToSkillsMigration', () => {
       fs.access(path.join(tmpDir, '.agents', 'rules', 'linear.mdc')),
     ).rejects.toThrow();
 
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(tmpDir, '.agents', '.skiller.json'), 'utf8'),
-    ) as { localSkills: string[] };
-    expect(manifest.localSkills).toEqual(['other']);
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', '.skiller.json')),
+    ).rejects.toThrow();
 
     expect(
       buildRulesReplacementInstallArgs({

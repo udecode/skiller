@@ -2,10 +2,12 @@ import {
   addHandler,
   applyHandler,
   initHandler,
+  installHandler,
   migrateClaudePluginsHandler,
   revertHandler,
   skillsHandler,
   updateHandler,
+  outdatedHandler,
   removeHandler,
   listHandler,
   findHandler,
@@ -14,11 +16,15 @@ import {
 import { applyAllAgentConfigs } from '../../../src/lib';
 import { revertAllAgentConfigs } from '../../../src/revert';
 import { runSkillsCli } from '../../../src/cli/skills-cli';
-import { planClaudePluginSkillsMigration } from '../../../src/core/ClaudePluginMigration';
+import {
+  listClaudePluginAuxiliaryRuleNames,
+  planClaudePluginSkillsMigration,
+} from '../../../src/core/ClaudePluginMigration';
 import {
   planRulesToSkillsMigration,
   removeLocalRuleReplacementState,
 } from '../../../src/core/RulesToSkillsMigration';
+import { resolveSkillOwnership } from '../../../src/core/SkillOwnership';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -36,6 +42,10 @@ jest.mock('../../../src/core/RulesToSkillsMigration', () => ({
   planRulesToSkillsMigration: jest.fn(),
   removeLocalRuleReplacementState: jest.fn(),
 }));
+jest.mock('../../../src/core/SkillOwnership', () => ({
+  ...jest.requireActual('../../../src/core/SkillOwnership'),
+  resolveSkillOwnership: jest.fn(),
+}));
 
 describe('CLI Handlers', () => {
   const mockProjectRoot = '/mock/project/root';
@@ -50,6 +60,7 @@ describe('CLI Handlers', () => {
       installs: [],
       unresolved: [],
     });
+    (listClaudePluginAuxiliaryRuleNames as jest.Mock).mockResolvedValue([]);
     (planRulesToSkillsMigration as jest.Mock).mockResolvedValue({
       candidates: [],
       missingRequested: [],
@@ -57,6 +68,13 @@ describe('CLI Handlers', () => {
       unmatched: [],
     });
     (removeLocalRuleReplacementState as jest.Mock).mockResolvedValue(undefined);
+    (resolveSkillOwnership as jest.Mock).mockResolvedValue({
+      upstreamOwned: new Set<string>(),
+      localOwned: new Set<string>(),
+      orphaned: new Set<string>(),
+      conflicts: [],
+      warnings: [],
+    });
     // Mock loadConfig to return default config
     (loadConfig as jest.Mock).mockResolvedValue({
       defaultAgents: undefined,
@@ -386,6 +404,7 @@ describe('CLI Handlers', () => {
       await addHandler({
         'project-root': mockProjectRoot,
         args: ['react', '--agent', 'codex'],
+        verbose: false,
       });
 
       expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
@@ -394,24 +413,94 @@ describe('CLI Handlers', () => {
         '--agent',
         'codex',
       ]);
+      expect(applyAllAgentConfigs).toHaveBeenCalledWith(
+        mockProjectRoot,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        undefined,
+      );
     });
 
     it('delegates update to the pinned local skills CLI', async () => {
       await updateHandler({
         'project-root': mockProjectRoot,
         args: ['--all'],
+        verbose: false,
       });
 
       expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
         'update',
         '--all',
       ]);
+      expect(applyAllAgentConfigs).toHaveBeenCalledWith(
+        mockProjectRoot,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        undefined,
+      );
+    });
+
+    it('delegates install to experimental_install and auto-applies', async () => {
+      await installHandler({
+        'project-root': mockProjectRoot,
+        args: ['--frozen'],
+        verbose: true,
+      });
+
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'experimental_install',
+        '--frozen',
+      ]);
+      expect(applyAllAgentConfigs).toHaveBeenCalledWith(
+        mockProjectRoot,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        undefined,
+      );
+    });
+
+    it('delegates outdated to the pinned local skills CLI without applying', async () => {
+      await outdatedHandler({
+        'project-root': mockProjectRoot,
+        args: ['--json'],
+      });
+
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'outdated',
+        '--json',
+      ]);
+      expect(applyAllAgentConfigs).not.toHaveBeenCalled();
     });
 
     it('delegates remove/list/find/check wrappers to the pinned local skills CLI', async () => {
       await removeHandler({
         'project-root': mockProjectRoot,
         args: ['react'],
+        verbose: true,
       });
       await listHandler({
         'project-root': mockProjectRoot,
@@ -442,6 +531,114 @@ describe('CLI Handlers', () => {
         'check',
         '--strict',
       ]);
+      expect(applyAllAgentConfigs).toHaveBeenCalledWith(
+        mockProjectRoot,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        undefined,
+      );
+    });
+
+    it('prunes requested orphan skill outputs during remove before apply', async () => {
+      (resolveSkillOwnership as jest.Mock).mockResolvedValue({
+        upstreamOwned: new Set<string>(),
+        localOwned: new Set<string>(),
+        orphaned: new Set<string>(['react']),
+        conflicts: [],
+        warnings: [],
+      });
+
+      await removeHandler({
+        'project-root': mockProjectRoot,
+        args: ['react', '-y'],
+        verbose: true,
+      });
+
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'remove',
+        'react',
+        '-y',
+      ]);
+      expect(fs.rm).toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.agents', 'skills', 'react'),
+        { force: true, recursive: true },
+      );
+      expect(fs.rm).toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.claude', 'skills', 'react'),
+        { force: true, recursive: true },
+      );
+      expect(applyAllAgentConfigs).toHaveBeenCalled();
+    });
+
+    it('does not prune outputs for still-owned skills during remove', async () => {
+      (resolveSkillOwnership as jest.Mock).mockResolvedValue({
+        upstreamOwned: new Set<string>(['react']),
+        localOwned: new Set<string>(),
+        orphaned: new Set<string>(),
+        conflicts: [],
+        warnings: [],
+      });
+
+      await removeHandler({
+        'project-root': mockProjectRoot,
+        args: ['react', '-y'],
+        verbose: true,
+      });
+
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'remove',
+        'react',
+        '-y',
+      ]);
+      expect(fs.rm).not.toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.agents', 'skills', 'react'),
+        { force: true, recursive: true },
+      );
+      expect(fs.rm).not.toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.claude', 'skills', 'react'),
+        { force: true, recursive: true },
+      );
+      expect(applyAllAgentConfigs).toHaveBeenCalled();
+    });
+
+    it('scrubs requested stale skills-lock entries during remove', async () => {
+      (fs.readFile as jest.Mock).mockResolvedValueOnce(
+        JSON.stringify({
+          skills: {
+            react: { source: 'foo/bar' },
+            'ce:work-beta': { source: 'foo/bar' },
+            keep: { source: 'foo/bar' },
+          },
+        }),
+      );
+
+      await removeHandler({
+        'project-root': mockProjectRoot,
+        args: ['react', 'ce-work-beta', '-y'],
+        verbose: true,
+      });
+
+      expect(fs.writeFile).toHaveBeenCalledWith(
+        path.join(mockProjectRoot, 'skills-lock.json'),
+        JSON.stringify(
+          {
+            skills: {
+              keep: { source: 'foo/bar' },
+            },
+          },
+          null,
+          2,
+        ) + '\n',
+      );
+      expect(applyAllAgentConfigs).toHaveBeenCalled();
     });
 
     it('passes through arbitrary skills subcommands unchanged', async () => {
@@ -536,7 +733,7 @@ describe('CLI Handlers', () => {
       ]);
     });
 
-    it('fails before executing anything when unresolved plugins remain', async () => {
+    it('removes stale plugin-derived auxiliary rules after install', async () => {
       (planClaudePluginSkillsMigration as jest.Mock).mockResolvedValue({
         installs: [
           {
@@ -545,6 +742,232 @@ describe('CLI Handlers', () => {
             strategy: 'marketplace-source',
           },
         ],
+        unresolved: [],
+      });
+      (listClaudePluginAuxiliaryRuleNames as jest.Mock).mockResolvedValue([
+        'adversarial-document-reviewer',
+        'agent-native-reviewer',
+      ]);
+      (planRulesToSkillsMigration as jest.Mock).mockResolvedValue({
+        candidates: [
+          {
+            alreadyInstalled: false,
+            matches: [
+              {
+                installs: 42,
+                name: 'agent-native-reviewer',
+                slug: 'udecode/plate/agent-native-reviewer',
+                source: 'udecode/plate',
+              },
+            ],
+            ruleName: 'agent-native-reviewer',
+          },
+        ],
+        missingRequested: [],
+        scannedRules: [
+          'adversarial-document-reviewer',
+          'agent-native-reviewer',
+        ],
+        unmatched: ['adversarial-document-reviewer'],
+      });
+
+      await migrateClaudePluginsHandler({
+        'project-root': mockProjectRoot,
+        execute: true,
+      });
+
+      expect(removeLocalRuleReplacementState).toHaveBeenCalledTimes(1);
+      expect(removeLocalRuleReplacementState).toHaveBeenCalledWith(
+        mockProjectRoot,
+        'adversarial-document-reviewer',
+        false,
+      );
+      expect(fs.rm).toHaveBeenCalledWith(
+        path.join(
+          mockProjectRoot,
+          '.agents',
+          'skills',
+          'adversarial-document-reviewer',
+        ),
+        { force: true, recursive: true },
+      );
+      expect(fs.rm).toHaveBeenCalledWith(
+        path.join(
+          mockProjectRoot,
+          '.claude',
+          'skills',
+          'adversarial-document-reviewer',
+        ),
+        { force: true, recursive: true },
+      );
+    });
+
+    it('removes local legacy rules when they exact-match ratacat/claude-skills', async () => {
+      (planClaudePluginSkillsMigration as jest.Mock).mockResolvedValue({
+        installs: [
+          {
+            source: 'EveryInc/compound-engineering-plugin',
+            pluginIds: ['compound-engineering@every-marketplace'],
+            strategy: 'marketplace-source',
+          },
+        ],
+        unresolved: [],
+      });
+      (listClaudePluginAuxiliaryRuleNames as jest.Mock).mockResolvedValue([]);
+      (planRulesToSkillsMigration as jest.Mock).mockResolvedValue({
+        candidates: [
+          {
+            alreadyInstalled: false,
+            matches: [
+              {
+                installs: 42,
+                name: 'ankane-readme-writer',
+                slug: 'udecode/plate/ankane-readme-writer',
+                source: 'udecode/plate',
+              },
+              {
+                installs: 12,
+                name: 'ankane-readme-writer',
+                slug: 'ratacat/claude-skills/ankane-readme-writer',
+                source: 'ratacat/claude-skills',
+              },
+            ],
+            ruleName: 'ankane-readme-writer',
+          },
+          {
+            alreadyInstalled: false,
+            matches: [
+              {
+                installs: 10,
+                name: 'changeset',
+                slug: 'garden-co/jazz/changeset',
+                source: 'garden-co/jazz',
+              },
+            ],
+            ruleName: 'changeset',
+          },
+        ],
+        missingRequested: [],
+        scannedRules: ['ankane-readme-writer', 'changeset'],
+        unmatched: [],
+      });
+
+      await migrateClaudePluginsHandler({
+        'project-root': mockProjectRoot,
+        execute: true,
+      });
+
+      expect(removeLocalRuleReplacementState).toHaveBeenCalledWith(
+        mockProjectRoot,
+        'ankane-readme-writer',
+        false,
+      );
+      expect(removeLocalRuleReplacementState).not.toHaveBeenCalledWith(
+        mockProjectRoot,
+        'changeset',
+        false,
+      );
+      expect(fs.rm).toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.agents', 'skills', 'ankane-readme-writer'),
+        { force: true, recursive: true },
+      );
+    });
+
+    it('executes resolved installs and logs skipped unresolved plugins', async () => {
+      (planClaudePluginSkillsMigration as jest.Mock).mockResolvedValue({
+        installs: [
+          {
+            source: 'EveryInc/compound-engineering-plugin',
+            pluginIds: ['compound-engineering@every-marketplace'],
+            strategy: 'marketplace-source',
+          },
+        ],
+        unresolved: [
+          {
+            pluginId: 'mystery@unknown-marketplace',
+            reason: 'No repo source found',
+          },
+        ],
+      });
+
+      (fs.readFile as jest.Mock).mockImplementation(
+        async (filePath: string) => {
+          if (
+            filePath === path.join(mockProjectRoot, '.claude', 'settings.json')
+          ) {
+            return JSON.stringify({
+              enabledPlugins: {
+                'compound-engineering@every-marketplace': true,
+                'mystery@unknown-marketplace': true,
+              },
+              theme: 'dark',
+            });
+          }
+
+          if (
+            filePath === path.join(mockProjectRoot, '.claude', '.skiller.json')
+          ) {
+            return JSON.stringify({
+              version: 1,
+              targets: {
+                '.claude/skills': [
+                  {
+                    sourceType: 'plugin',
+                    pluginId: 'compound-engineering@every-marketplace',
+                    sourceKind: 'skill',
+                    sourceRelPath: 'skills/ce-work',
+                    destRelPath: 'compound-engineering-ce-work',
+                  },
+                  {
+                    sourceType: 'claude',
+                    sourceKind: 'command',
+                    sourceRelPath: 'commands/linear.md',
+                    destRelPath: 'linear',
+                  },
+                ],
+              },
+            });
+          }
+
+          throw new Error('ENOENT');
+        },
+      );
+      (fs.writeFile as jest.Mock).mockResolvedValue(undefined);
+      (fs.rm as jest.Mock).mockResolvedValue(undefined);
+      const logSpy = jest.spyOn(console, 'log').mockImplementation();
+
+      await migrateClaudePluginsHandler({
+        'project-root': mockProjectRoot,
+        execute: true,
+      });
+
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'add',
+        'EveryInc/compound-engineering-plugin',
+        '--agent',
+        'universal',
+        '--skill',
+        '*',
+        '-y',
+      ]);
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('mystery@unknown-marketplace'),
+      );
+      expect(fs.writeFile).toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.claude', 'settings.json'),
+        expect.not.stringContaining('compound-engineering@every-marketplace'),
+      );
+      expect(fs.writeFile).toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.claude', '.skiller.json'),
+        expect.not.stringContaining('compound-engineering@every-marketplace'),
+      );
+
+      logSpy.mockRestore();
+    });
+
+    it('fails when every plugin is unresolved and nothing is installable', async () => {
+      (planClaudePluginSkillsMigration as jest.Mock).mockResolvedValue({
+        installs: [],
         unresolved: [
           {
             pluginId: 'mystery@unknown-marketplace',

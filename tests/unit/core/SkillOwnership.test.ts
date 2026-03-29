@@ -2,7 +2,6 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  adoptSkillerOwnedSkillNames,
   getCanonicalSkillsDir,
   migrateLegacyProjectState,
   readUpstreamOwnedSkillNames,
@@ -54,7 +53,7 @@ describe('SkillOwnership', () => {
     expect([...names]).toEqual(['anotherSkill', 'ce-review', 'vendorSkill']);
   });
 
-  it('treats .agents/.skiller.json localSkills as skiller-owned', async () => {
+  it('ignores stale .agents/.skiller.json localSkills without matching rule files', async () => {
     await fs.writeFile(
       path.join(tmpDir, '.agents', '.skiller.json'),
       JSON.stringify(
@@ -69,7 +68,7 @@ describe('SkillOwnership', () => {
     );
 
     const ownership = await resolveSkillOwnership(tmpDir);
-    expect([...ownership.localOwned]).toEqual(['local-skill']);
+    expect([...ownership.localOwned]).toEqual([]);
     expect([...ownership.orphaned]).toEqual([]);
     expect(ownership.conflicts).toEqual([]);
   });
@@ -113,11 +112,11 @@ description: Orphaned skill
     const ownership = await resolveSkillOwnership(tmpDir);
     expect([...ownership.orphaned]).toEqual(['orphan-skill']);
     expect(ownership.warnings).toContain(
-      "Canonical skill 'orphan-skill' is unmanaged; leaving it untouched because it is not in skills-lock.json, .agents/rules/orphan-skill.mdc, or .agents/.skiller.json localSkills.",
+      "Canonical skill 'orphan-skill' is unmanaged; leaving it untouched because it is not in skills-lock.json or .agents/rules/orphan-skill.mdc.",
     );
   });
 
-  it('detects mixed ownership when the same skill is upstream and skiller-managed', async () => {
+  it('ignores stale manifest localSkills when the same skill is upstream-owned', async () => {
     await fs.writeFile(
       path.join(tmpDir, 'skills-lock.json'),
       JSON.stringify(
@@ -149,36 +148,11 @@ description: Orphaned skill
     );
 
     const ownership = await resolveSkillOwnership(tmpDir);
-    expect(ownership.conflicts).toEqual(['shared']);
-    expect(ownership.warnings[0]).toContain('shared');
+    expect(ownership.conflicts).toEqual([]);
+    expect(ownership.warnings).toEqual([]);
   });
 
-  it('adopts new local skill names into .agents/.skiller.json without taking upstream-owned names', async () => {
-    await fs.writeFile(
-      path.join(tmpDir, 'skills-lock.json'),
-      JSON.stringify(
-        {
-          version: 1,
-          skills: {
-            vendor: {
-              source: 'skills',
-              sourceType: 'node_modules',
-              computedHash: 'abc',
-            },
-          },
-        },
-        null,
-        2,
-      ),
-    );
-
-    await adoptSkillerOwnedSkillNames(tmpDir, ['local', 'vendor'], false);
-
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(tmpDir, '.agents', '.skiller.json'), 'utf8'),
-    ) as { localSkills: string[] };
-
-    expect(manifest.localSkills).toEqual(['local']);
+  it('uses .agents/skills as the canonical skills directory', async () => {
     expect(getCanonicalSkillsDir(tmpDir)).toBe(
       path.join(tmpDir, '.agents', 'skills'),
     );
@@ -264,9 +238,9 @@ alwaysApply: true
         'utf8',
       ),
     ).toContain('# Always Rule');
-    expect(
-      await fs.readFile(path.join(tmpDir, '.agents', '.skiller.json'), 'utf8'),
-    ).toContain('preexisting-local');
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', '.skiller.json')),
+    ).rejects.toThrow();
 
     await expect(
       fs.access(path.join(tmpDir, '.claude', 'skiller.toml')),
@@ -303,6 +277,54 @@ alwaysApply: true
     ).toBe('# Same instructions\n');
     await expect(
       fs.access(path.join(tmpDir, '.claude', 'AGENTS.md')),
+    ).rejects.toThrow();
+  });
+
+  it('does not re-extract local rules from .claude mirrors after canonical migration already exists', async () => {
+    await fs.mkdir(path.join(tmpDir, '.claude', 'commands'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.claude', 'commands', 'noop.md'),
+      '# native extra\n',
+    );
+
+    const canonicalSkillDir = path.join(
+      tmpDir,
+      '.agents',
+      'skills',
+      'ghost-skill',
+    );
+    await fs.mkdir(canonicalSkillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(canonicalSkillDir, 'SKILL.md'),
+      `---
+name: ghost-skill
+description: Ghost skill
+metadata:
+  skiller:
+    source: .agents/rules/ghost-skill.mdc
+---
+
+# Ghost skill
+`,
+    );
+    await fs.mkdir(path.join(tmpDir, '.claude', 'skills', 'ghost-skill'), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(tmpDir, '.claude', 'skills', 'ghost-skill', 'SKILL.md'),
+      `---
+name: ghost-skill
+description: Ghost skill
+---
+
+# Ghost skill
+`,
+    );
+
+    await migrateLegacyProjectState(tmpDir, false);
+
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', 'rules', 'ghost-skill.mdc')),
     ).rejects.toThrow();
   });
 
@@ -349,7 +371,7 @@ enabled = false
     );
   });
 
-  it('treats legacy wrapper skills and expanded canonical skills as equivalent during migration and localizes non-conflicting names', async () => {
+  it('ignores legacy .claude skill folders when canonical .agents skills already exist', async () => {
     await fs.mkdir(path.join(tmpDir, '.claude', 'skills', 'ai'), {
       recursive: true,
     });
@@ -386,24 +408,61 @@ Expanded body.
 
     await migrateLegacyProjectState(tmpDir, false);
 
-    expect(
-      await fs.readFile(
-        path.join(tmpDir, '.agents', 'rules', 'ai.mdc'),
-        'utf8',
-      ),
-    ).toContain('Expanded body.');
-
     const canonicalSkill = await fs.readFile(
       path.join(tmpDir, '.agents', 'skills', 'ai', 'SKILL.md'),
       'utf8',
     );
     expect(canonicalSkill).toContain('Expanded body.');
-    expect(canonicalSkill).toContain('source: .agents/rules/ai.mdc');
+    expect(canonicalSkill).not.toContain('source: .agents/rules/ai.mdc');
     await expect(
-      fs.access(path.join(tmpDir, '.agents', 'skills', 'ai', 'ai.mdc')),
+      fs.access(path.join(tmpDir, '.agents', 'rules', 'ai.mdc')),
     ).rejects.toThrow();
-    await expect(
-      fs.access(path.join(tmpDir, '.claude', 'skills', 'ai')),
-    ).rejects.toThrow();
+    await expect(fs.access(path.join(tmpDir, '.claude', 'skills', 'ai')))
+      .resolves.toBeUndefined();
+  });
+
+  it('leaves .claude skill mirrors alone when canonical .agents skills already exist', async () => {
+    await fs.mkdir(path.join(tmpDir, '.claude', 'skills', 'react'), {
+      recursive: true,
+    });
+    await fs.mkdir(path.join(tmpDir, '.agents', 'skills', 'react'), {
+      recursive: true,
+    });
+
+    await fs.writeFile(
+      path.join(tmpDir, '.claude', 'skills', 'react', 'SKILL.md'),
+      `---
+name: react
+description: Legacy react
+---
+
+@.claude/skills/react/react.mdc
+`,
+    );
+    await fs.writeFile(
+      path.join(tmpDir, '.claude', 'skills', 'react', 'react.mdc'),
+      '# stale legacy react\n',
+    );
+    await fs.writeFile(
+      path.join(tmpDir, '.agents', 'skills', 'react', 'SKILL.md'),
+      `---
+name: react
+description: Canonical react
+---
+
+# canonical react
+`,
+    );
+
+    await migrateLegacyProjectState(tmpDir, false);
+
+    expect(
+      await fs.readFile(
+        path.join(tmpDir, '.agents', 'skills', 'react', 'SKILL.md'),
+        'utf8',
+      ),
+    ).toContain('Canonical react');
+    await expect(fs.access(path.join(tmpDir, '.claude', 'skills', 'react')))
+      .resolves.toBeUndefined();
   });
 });

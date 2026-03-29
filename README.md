@@ -4,14 +4,16 @@ Apply the same rules (and skills) to multiple AI coding agents.
 
 ```bash
 npx skiller@latest init
-npx skiller@latest apply
+npx skiller@latest install
 ```
 
 ## Skills
 
-- `.claude/skills/` is the committed source of truth
-- On `apply`, skills are synced to the same project skill directories defined by the sibling `skills` project
-- Claude Code plugins, commands, and agents are also synced as skills to other agents
+- `.agents/rules/*.mdc` is local rule authoring
+- `.agents/skills/` is the canonical runtime skill tree
+- `skills-lock.json` is the upstream source of truth for installed skills
+- `skiller install` and `skiller update` use the local `skills` CLI, then auto-run `apply`
+- `skiller apply` stays local and non-destructive
 - See [docs/skills.md](docs/skills.md)
 
 ## MCP

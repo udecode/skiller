@@ -1,12 +1,16 @@
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { planClaudePluginSkillsMigration } from '../../../src/core/ClaudePluginMigration';
+import {
+  listClaudePluginAuxiliaryRuleNames,
+  planClaudePluginSkillsMigration,
+} from '../../../src/core/ClaudePluginMigration';
 
 describe('ClaudePluginMigration', () => {
   let tmpDir: string;
   let tmpHome: string;
   const originalHome = process.env.HOME;
+  const allowAllSources = async () => ({ installable: true });
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(
@@ -108,7 +112,9 @@ describe('ClaudePluginMigration', () => {
       { name: 'planning-with-files', source: './' },
     ]);
 
-    const plan = await planClaudePluginSkillsMigration(tmpDir);
+    const plan = await planClaudePluginSkillsMigration(tmpDir, {
+      inspectSource: allowAllSources,
+    });
 
     expect(plan.installs).toEqual([
       {
@@ -163,7 +169,9 @@ describe('ClaudePluginMigration', () => {
       },
     ]);
 
-    const plan = await planClaudePluginSkillsMigration(tmpDir);
+    const plan = await planClaudePluginSkillsMigration(tmpDir, {
+      inspectSource: allowAllSources,
+    });
 
     expect(plan.installs).toEqual([
       {
@@ -215,7 +223,9 @@ describe('ClaudePluginMigration', () => {
       },
     ]);
 
-    const plan = await planClaudePluginSkillsMigration(tmpDir);
+    const plan = await planClaudePluginSkillsMigration(tmpDir, {
+      inspectSource: allowAllSources,
+    });
 
     expect(plan.installs).toEqual([
       {
@@ -250,6 +260,82 @@ describe('ClaudePluginMigration', () => {
         reason:
           'No repo or URL source could be inferred for marketplace unknown-marketplace',
       },
+    ]);
+  });
+
+  it('reports unresolved plugins when the resolved repo is not a valid skills repo', async () => {
+    await fs.writeFile(
+      path.join(tmpDir, '.claude', 'settings.json'),
+      JSON.stringify(
+        {
+          enabledPlugins: {
+            'lsp-servers@claude-lsp-servers': true,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await writeKnownMarketplaces({
+      'claude-lsp-servers': {
+        source: {
+          source: 'github',
+          repo: 'yungweng/claude-lsp-servers',
+        },
+      },
+    });
+
+    const plan = await planClaudePluginSkillsMigration(tmpDir, {
+      inspectSource: async (source) =>
+        source === 'yungweng/claude-lsp-servers'
+          ? {
+              installable: false,
+              reason:
+                'Resolved source yungweng/claude-lsp-servers has no valid SKILL.md files with name and description',
+            }
+          : { installable: true },
+    });
+
+    expect(plan.installs).toEqual([]);
+    expect(plan.unresolved).toEqual([
+      {
+        pluginId: 'lsp-servers@claude-lsp-servers',
+        reason:
+          'Resolved source yungweng/claude-lsp-servers has no valid SKILL.md files with name and description',
+      },
+    ]);
+  });
+
+  it('lists only auxiliary rule names that are not published skills in the migrated sources', async () => {
+    const names = await listClaudePluginAuxiliaryRuleNames(
+      ['EveryInc/compound-engineering-plugin', 'udecode/dotai'],
+      {
+        inspectSource: async (source) => {
+          if (source === 'EveryInc/compound-engineering-plugin') {
+            return {
+              installable: true,
+              publishedSkillNames: ['document-review', 'frontend-design'],
+              auxiliarySkillNames: [
+                'adversarial-document-reviewer',
+                'frontend-design',
+                'agent-native-reviewer',
+              ],
+            };
+          }
+
+          return {
+            installable: true,
+            publishedSkillNames: ['debug'],
+            auxiliarySkillNames: ['debug'],
+          };
+        },
+      },
+    );
+
+    expect(names).toEqual([
+      'adversarial-document-reviewer',
+      'agent-native-reviewer',
     ]);
   });
 });

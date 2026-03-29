@@ -6,7 +6,10 @@ import * as fs from 'fs/promises';
 import { ERROR_PREFIX, DEFAULT_RULES_FILENAME } from '../constants';
 import { McpStrategy } from '../types';
 import { loadConfig } from '../core/ConfigLoader';
-import { planClaudePluginSkillsMigration } from '../core/ClaudePluginMigration';
+import {
+  listClaudePluginAuxiliaryRuleNames,
+  planClaudePluginSkillsMigration,
+} from '../core/ClaudePluginMigration';
 import {
   buildRulesReplacementInstallArgs,
   planRulesToSkillsMigration,
@@ -15,25 +18,30 @@ import {
   type SkillsRegistryMatch,
 } from '../core/RulesToSkillsMigration';
 import { getAgentIdentifiersForCliHelp } from '../agents';
+import { allAgents } from '../agents';
 import { runSkillsCli } from './skills-cli';
 import {
   CANONICAL_SKILLER_DIR,
   SKILLER_CONFIG_FILE,
 } from '../core/project-paths';
+import {
+  getCanonicalSkillsDir,
+  resolveSkillOwnership,
+} from '../core/SkillOwnership';
 import * as readline from 'readline/promises';
 
 export interface ApplyArgs {
   'project-root': string;
   agents?: string;
   config?: string;
-  mcp: boolean;
-  'mcp-overwrite': boolean;
+  mcp?: boolean;
+  'mcp-overwrite'?: boolean;
   gitignore?: boolean;
-  verbose: boolean;
-  'dry-run': boolean;
-  'local-only': boolean;
+  verbose?: boolean;
+  'dry-run'?: boolean;
+  'local-only'?: boolean;
   nested?: boolean;
-  backup: boolean;
+  backup?: boolean;
   skills?: boolean;
 }
 
@@ -55,6 +63,15 @@ export interface RevertArgs {
 export interface SkillsWrapperArgs {
   'project-root': string;
   args?: string[];
+  verbose?: boolean;
+}
+
+export interface InstallArgs extends SkillsWrapperArgs {
+  verbose?: boolean;
+}
+
+export interface UpdateArgs extends SkillsWrapperArgs {
+  verbose?: boolean;
 }
 
 export interface SkillsPassthroughArgs extends SkillsWrapperArgs {
@@ -86,8 +103,123 @@ async function executeSkillsWrapper(
   }
 }
 
+async function applyAfterSkillsLifecycleStep(
+  projectRoot: string,
+  verbose: boolean,
+): Promise<void> {
+  await applyHandler({
+    'project-root': projectRoot,
+    verbose,
+  });
+}
+
+function normalizeRequestedSkillNames(args: string[] | undefined): string[] {
+  if (!args || args.length === 0) return [];
+
+  const names = new Set<string>();
+
+  for (const arg of args) {
+    if (!arg || arg.startsWith('-') || arg.includes('/')) continue;
+
+    const normalized = path.basename(arg, '.mdc').trim().replace(/:/g, '-');
+
+    if (normalized.length > 0) {
+      names.add(normalized);
+    }
+  }
+
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
+async function scrubRequestedSkillsLockEntries(
+  projectRoot: string,
+  args: string[] | undefined,
+): Promise<string[]> {
+  const requestedNames = new Set(normalizeRequestedSkillNames(args));
+  if (requestedNames.size === 0) return [];
+
+  const skillsLockPath = path.join(projectRoot, 'skills-lock.json');
+  const raw = await readJsonObject(skillsLockPath);
+  if (!raw) return [];
+
+  const skills = raw.skills;
+  if (!skills || typeof skills !== 'object') return [];
+
+  const nextSkills: Record<string, unknown> = {};
+  const removedKeys: string[] = [];
+
+  for (const [key, value] of Object.entries(
+    skills as Record<string, unknown>,
+  )) {
+    if (requestedNames.has(key.replace(/:/g, '-'))) {
+      removedKeys.push(key);
+      continue;
+    }
+    nextSkills[key] = value;
+  }
+
+  if (removedKeys.length === 0) return [];
+
+  raw.skills = nextSkills;
+  await fs.writeFile(skillsLockPath, JSON.stringify(raw, null, 2) + '\n');
+
+  return removedKeys.sort((a, b) => a.localeCompare(b));
+}
+
+async function pruneRequestedUnmanagedSkillOutputs(
+  projectRoot: string,
+  args: string[] | undefined,
+): Promise<string[]> {
+  const requestedNames = normalizeRequestedSkillNames(args);
+  if (requestedNames.length === 0) return [];
+
+  const ownership = await resolveSkillOwnership(projectRoot);
+  const removableNames = requestedNames.filter(
+    (name) =>
+      !ownership.upstreamOwned.has(name) && !ownership.localOwned.has(name),
+  );
+
+  if (removableNames.length === 0) return [];
+
+  const skillDirs = new Set<string>([getCanonicalSkillsDir(projectRoot)]);
+
+  for (const agent of allAgents) {
+    if (!agent.supportsNativeSkills?.() || !agent.getSkillsPath) continue;
+    const skillsPath = agent.getSkillsPath(projectRoot);
+    if (skillsPath) {
+      skillDirs.add(skillsPath);
+    }
+  }
+
+  for (const skillName of removableNames) {
+    for (const skillsDir of skillDirs) {
+      await fs.rm(path.join(skillsDir, skillName), {
+        force: true,
+        recursive: true,
+      });
+    }
+  }
+
+  return removableNames;
+}
+
 function buildClaudePluginMigrationArgs(source: string): string[] {
   return ['add', source, '--agent', 'universal', '--skill', '*', '-y'];
+}
+
+const LEGACY_EXTERNAL_RULE_REPLACEMENT_SOURCES = new Set([
+  'ratacat/claude-skills',
+]);
+
+function resolveRegistryMatchSource(match: SkillsRegistryMatch): string {
+  if (match.source) return match.source;
+
+  const parts = match.slug.split('/').filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]}/${parts[1]}`;
+  }
+
+  return match.slug;
 }
 
 function formatInstalls(count: number): string {
@@ -104,6 +236,195 @@ function formatInstalls(count: number): string {
 function formatMatch(match: SkillsRegistryMatch): string {
   const source = match.source || match.slug;
   return `${source}@${match.name} (${formatInstalls(match.installs)})`;
+}
+
+async function readJsonObject(
+  filePath: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const raw = JSON.parse(await fs.readFile(filePath, 'utf8')) as unknown;
+    return raw && typeof raw === 'object'
+      ? (raw as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function cleanupLegacyClaudePluginState(
+  projectRoot: string,
+  pluginIds: string[],
+): Promise<void> {
+  const pluginIdSet = new Set(pluginIds);
+  if (pluginIdSet.size === 0) return;
+
+  const settingsPath = path.join(projectRoot, '.claude', 'settings.json');
+  const settings = await readJsonObject(settingsPath);
+  if (settings) {
+    const enabledPlugins = settings.enabledPlugins;
+    if (enabledPlugins && typeof enabledPlugins === 'object') {
+      const nextEnabledPlugins = Object.fromEntries(
+        Object.entries(enabledPlugins as Record<string, unknown>).filter(
+          ([pluginId]) => !pluginIdSet.has(pluginId),
+        ),
+      );
+
+      if (
+        Object.keys(nextEnabledPlugins).length !==
+        Object.keys(enabledPlugins as Record<string, unknown>).length
+      ) {
+        if (Object.keys(nextEnabledPlugins).length === 0) {
+          delete settings.enabledPlugins;
+        } else {
+          settings.enabledPlugins = nextEnabledPlugins;
+        }
+
+        await fs.writeFile(
+          settingsPath,
+          JSON.stringify(settings, null, 2) + '\n',
+        );
+      }
+    }
+  }
+
+  for (const manifestPath of [
+    path.join(projectRoot, '.agents', '.skiller.json'),
+    path.join(projectRoot, '.claude', '.skiller.json'),
+  ]) {
+    const manifest = await readJsonObject(manifestPath);
+    if (!manifest) continue;
+
+    const targets = manifest.targets;
+    if (!targets || typeof targets !== 'object') continue;
+
+    let changed = false;
+    const nextTargets: Record<string, unknown> = {};
+
+    for (const [targetKey, rawEntries] of Object.entries(
+      targets as Record<string, unknown>,
+    )) {
+      if (!Array.isArray(rawEntries)) {
+        nextTargets[targetKey] = rawEntries;
+        continue;
+      }
+
+      const filteredEntries = rawEntries.filter((entry) => {
+        if (!entry || typeof entry !== 'object') return true;
+
+        const sourceType = (entry as Record<string, unknown>).sourceType;
+        const pluginId = (entry as Record<string, unknown>).pluginId;
+        if (sourceType !== 'plugin' || typeof pluginId !== 'string') {
+          return true;
+        }
+
+        return !pluginIdSet.has(pluginId);
+      });
+
+      if (filteredEntries.length !== rawEntries.length) {
+        changed = true;
+      }
+
+      if (filteredEntries.length > 0) {
+        nextTargets[targetKey] = filteredEntries;
+      } else {
+        changed = true;
+      }
+    }
+
+    if (!changed) continue;
+
+    manifest.targets = nextTargets;
+    delete manifest.localSkills;
+    if (Object.keys(nextTargets).length === 0) {
+      await fs.rm(manifestPath, { force: true });
+      continue;
+    }
+
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+  }
+}
+
+async function cleanupMigratedPluginAuxiliaryRules(
+  projectRoot: string,
+  sources: string[],
+): Promise<string[]> {
+  const candidateRuleNames = await listClaudePluginAuxiliaryRuleNames(sources);
+  if (candidateRuleNames.length === 0) return [];
+
+  const sourceSet = new Set(sources);
+  const plan = await planRulesToSkillsMigration(
+    projectRoot,
+    candidateRuleNames,
+  );
+  const removable = new Set<string>(plan.unmatched);
+
+  for (const candidate of plan.candidates) {
+    const exactMatchSources = candidate.matches.map(resolveRegistryMatchSource);
+    if (
+      exactMatchSources.length === 0 ||
+      exactMatchSources.every((source) => sourceSet.has(source))
+    ) {
+      removable.add(candidate.ruleName);
+    }
+  }
+
+  const removed = [...removable].sort((a, b) => a.localeCompare(b));
+  for (const ruleName of removed) {
+    await removeLocalRuleReplacementState(projectRoot, ruleName, false);
+    await fs.rm(path.join(projectRoot, '.agents', 'skills', ruleName), {
+      force: true,
+      recursive: true,
+    });
+    await fs.rm(path.join(projectRoot, '.claude', 'skills', ruleName), {
+      force: true,
+      recursive: true,
+    });
+  }
+
+  return removed;
+}
+
+async function cleanupLegacyExternalRuleMatches(
+  projectRoot: string,
+): Promise<string[]> {
+  const plan = await planRulesToSkillsMigration(projectRoot);
+  const removals = new Map<string, { alreadyInstalled: boolean }>();
+
+  for (const candidate of plan.candidates) {
+    if (
+      !candidate.matches.some((match) =>
+        LEGACY_EXTERNAL_RULE_REPLACEMENT_SOURCES.has(
+          resolveRegistryMatchSource(match),
+        ),
+      )
+    ) {
+      continue;
+    }
+
+    removals.set(candidate.ruleName, {
+      alreadyInstalled: candidate.alreadyInstalled,
+    });
+  }
+
+  const removed = [...removals.keys()].sort((a, b) => a.localeCompare(b));
+  for (const ruleName of removed) {
+    const removal = removals.get(ruleName);
+    await removeLocalRuleReplacementState(projectRoot, ruleName, false);
+
+    if (!removal?.alreadyInstalled) {
+      await fs.rm(path.join(projectRoot, '.agents', 'skills', ruleName), {
+        force: true,
+        recursive: true,
+      });
+    }
+
+    await fs.rm(path.join(projectRoot, '.claude', 'skills', ruleName), {
+      force: true,
+      recursive: true,
+    });
+  }
+
+  return removed;
 }
 
 async function promptLine(message: string): Promise<string> {
@@ -402,9 +723,9 @@ export async function migrateClaudePluginsHandler(
       return;
     }
 
-    if (plan.unresolved.length > 0) {
+    if (plan.installs.length === 0 && plan.unresolved.length > 0) {
       throw new Error(
-        `Cannot execute migration until all plugins resolve:\n${plan.unresolved.map((entry) => `- ${entry.pluginId}: ${entry.reason}`).join('\n')}`,
+        `Cannot execute migration because no installable plugin repos were found:\n${plan.unresolved.map((entry) => `- ${entry.pluginId}: ${entry.reason}`).join('\n')}`,
       );
     }
 
@@ -415,8 +736,37 @@ export async function migrateClaudePluginsHandler(
       );
     }
 
+    await cleanupLegacyClaudePluginState(projectRoot, [
+      ...plan.installs.flatMap((install) => install.pluginIds),
+      ...plan.unresolved.map((entry) => entry.pluginId),
+    ]);
+
+    const removedAuxiliaryRules = await cleanupMigratedPluginAuxiliaryRules(
+      projectRoot,
+      plan.installs.map((install) => install.source),
+    );
+    if (removedAuxiliaryRules.length > 0) {
+      console.log(
+        `[skiller] Removed stale plugin-derived local rules:\n${removedAuxiliaryRules.map((name) => `- ${name}`).join('\n')}`,
+      );
+    }
+
+    const removedLegacyExternalRules =
+      await cleanupLegacyExternalRuleMatches(projectRoot);
+    if (removedLegacyExternalRules.length > 0) {
+      console.log(
+        `[skiller] Removed legacy external rule matches:\n${removedLegacyExternalRules.map((name) => `- ${name}`).join('\n')}`,
+      );
+    }
+
+    if (plan.unresolved.length > 0) {
+      console.log(
+        `[skiller] Skipped unresolved plugins:\n${plan.unresolved.map((entry) => `- ${entry.pluginId}: ${entry.reason}`).join('\n')}`,
+      );
+    }
+
     console.log(
-      '[skiller] Claude plugin repo migration completed. Remove the plugin entries from .claude/settings.json, then rerun skiller apply.',
+      '[skiller] Claude plugin repo migration completed. Legacy Claude plugin entries were removed from settings/manifests; rerun skiller apply.',
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -505,6 +855,21 @@ export async function addHandler(argv: SkillsWrapperArgs): Promise<void> {
     'add',
     ...(argv.args ?? []),
   ]);
+  await applyAfterSkillsLifecycleStep(
+    argv['project-root'],
+    argv.verbose ?? false,
+  );
+}
+
+export async function installHandler(argv: InstallArgs): Promise<void> {
+  await executeSkillsWrapper(argv['project-root'], [
+    'experimental_install',
+    ...(argv.args ?? []),
+  ]);
+  await applyAfterSkillsLifecycleStep(
+    argv['project-root'],
+    argv.verbose ?? false,
+  );
 }
 
 export async function removeHandler(argv: SkillsWrapperArgs): Promise<void> {
@@ -512,6 +877,15 @@ export async function removeHandler(argv: SkillsWrapperArgs): Promise<void> {
     'remove',
     ...(argv.args ?? []),
   ]);
+  await scrubRequestedSkillsLockEntries(argv['project-root'], argv.args ?? []);
+  await pruneRequestedUnmanagedSkillOutputs(
+    argv['project-root'],
+    argv.args ?? [],
+  );
+  await applyAfterSkillsLifecycleStep(
+    argv['project-root'],
+    argv.verbose ?? false,
+  );
 }
 
 export async function listHandler(argv: SkillsWrapperArgs): Promise<void> {
@@ -535,9 +909,20 @@ export async function checkHandler(argv: SkillsWrapperArgs): Promise<void> {
   ]);
 }
 
-export async function updateHandler(argv: SkillsWrapperArgs): Promise<void> {
+export async function updateHandler(argv: UpdateArgs): Promise<void> {
   await executeSkillsWrapper(argv['project-root'], [
     'update',
+    ...(argv.args ?? []),
+  ]);
+  await applyAfterSkillsLifecycleStep(
+    argv['project-root'],
+    argv.verbose ?? false,
+  );
+}
+
+export async function outdatedHandler(argv: SkillsWrapperArgs): Promise<void> {
+  await executeSkillsWrapper(argv['project-root'], [
+    'outdated',
     ...(argv.args ?? []),
   ]);
 }

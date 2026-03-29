@@ -34,7 +34,6 @@ export interface ClaudeSkillsManifestEntry {
 interface ProjectSkillsManifestFile {
   version: number;
   targets: Record<string, SkillsManifestEntry[]>;
-  localSkills?: string[];
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -220,18 +219,6 @@ function parseProjectTargets(
   return out;
 }
 
-function parseLocalSkills(raw: unknown): string[] {
-  if (!raw || typeof raw !== 'object') return [];
-  const obj = raw as Record<string, unknown>;
-  if (!Array.isArray(obj.localSkills)) return [];
-
-  return [
-    ...new Set(
-      obj.localSkills.filter((v): v is string => typeof v === 'string'),
-    ),
-  ].sort((a, b) => a.localeCompare(b));
-}
-
 async function readProjectManifestRaw(
   projectRoot: string,
 ): Promise<unknown | null> {
@@ -406,43 +393,51 @@ export async function loadSkillsManifestEntries(
   return await loadLegacyTargetSkillsManifestEntries(targetSkillsDir);
 }
 
-export async function loadLocalSkillNames(
-  projectRoot: string,
-): Promise<string[]> {
-  const raw = await readProjectManifestRaw(projectRoot);
-  return parseLocalSkills(raw);
-}
-
-export async function writeLocalSkillNames(
-  projectRoot: string,
-  localSkillNames: string[],
+async function normalizeManifestFile(
+  manifestPath: string,
   dryRun: boolean,
 ): Promise<void> {
-  const projectSkillerDir = path.join(projectRoot, CANONICAL_SKILLER_DIR);
-  const projectManifestPath = path.join(
-    projectSkillerDir,
-    SKILLS_MANIFEST_FILENAME,
-  );
+  if (!(await fileExists(manifestPath))) return;
 
-  const raw = await readProjectManifestRaw(projectRoot);
-  const existingTargets = parseProjectTargets(raw);
-  const nextLocalSkills = [...new Set(localSkillNames)].sort((a, b) =>
-    a.localeCompare(b),
-  );
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as unknown;
+  } catch {
+    return;
+  }
 
+  const hasLegacyLocalSkills =
+    !!raw &&
+    typeof raw === 'object' &&
+    Array.isArray((raw as Record<string, unknown>).localSkills);
+
+  if (!hasLegacyLocalSkills) return;
   if (dryRun) return;
 
-  await fs.mkdir(projectSkillerDir, { recursive: true });
+  const targets = parseProjectTargets(raw);
+  if (Object.keys(targets).length === 0) {
+    await fs.rm(manifestPath, { force: true });
+    return;
+  }
 
   const manifest: ProjectSkillsManifestFile = {
     version: SKILLS_MANIFEST_VERSION,
-    targets: existingTargets,
-    localSkills: nextLocalSkills,
+    targets,
   };
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+}
 
-  await fs.writeFile(
-    projectManifestPath,
-    JSON.stringify(manifest, null, 2) + '\n',
+export async function scrubLegacyLocalSkillsManifest(
+  projectRoot: string,
+  dryRun: boolean,
+): Promise<void> {
+  await normalizeManifestFile(
+    path.join(projectRoot, CANONICAL_SKILLER_DIR, SKILLS_MANIFEST_FILENAME),
+    dryRun,
+  );
+  await normalizeManifestFile(
+    path.join(projectRoot, LEGACY_SKILLER_DIR, SKILLS_MANIFEST_FILENAME),
+    dryRun,
   );
 }
 
@@ -466,7 +461,6 @@ export async function writeSkillsManifestEntries(
   let existingTargets: Record<string, SkillsManifestEntry[]> = {};
   const raw = await readProjectManifestRaw(projectRoot);
   existingTargets = parseProjectTargets(raw);
-  const existingLocalSkills = parseLocalSkills(raw);
 
   if (normalized.length === 0) {
     delete existingTargets[preferredTargetKey];
@@ -488,7 +482,7 @@ export async function writeSkillsManifestEntries(
   const targetKeys = Object.keys(existingTargets).sort((a, b) =>
     a.localeCompare(b),
   );
-  if (targetKeys.length === 0 && existingLocalSkills.length === 0) {
+  if (targetKeys.length === 0) {
     await Promise.allSettled([fs.unlink(projectManifestPath)]);
   } else {
     const nextTargets: Record<string, SkillsManifestEntry[]> = {};
@@ -497,7 +491,6 @@ export async function writeSkillsManifestEntries(
     const manifest: ProjectSkillsManifestFile = {
       version: SKILLS_MANIFEST_VERSION,
       targets: nextTargets,
-      localSkills: existingLocalSkills,
     };
     await fs.writeFile(
       projectManifestPath,

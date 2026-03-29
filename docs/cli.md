@@ -4,16 +4,23 @@ Skiller is a Node CLI (Node >= 18).
 
 ## Install / run
 
-- One-off: `npx skiller@latest apply`
-- Global: `npm i -g skiller` then `skiller apply`
+- One-off: `npx skiller@latest install`
+- Global: `npm i -g skiller` then `skiller install`
 
 ## `skiller init`
 
-Scaffolds a `.claude/` folder.
+Scaffolds a `.agents/` folder.
 
-- Creates `.claude/AGENTS.md`
-- Creates `.claude/skiller.toml`
+- Creates `.agents/AGENTS.md`
+- Creates `.agents/skiller.toml`
 - `skiller init --global` writes to `$XDG_CONFIG_HOME/skiller` (default `~/.config/skiller`)
+
+## Lifecycle
+
+- `skiller install`: install exactly what `skills-lock.json` pins, then run `skiller apply`
+- `skiller update`: refresh upstream skill versions, rewrite `skills-lock.json`, then run `skiller apply`
+- `skiller outdated`: show available upstream updates without applying anything
+- `skiller apply`: pure local sync/compile/propagation, no network access
 
 ## `skiller apply`
 
@@ -33,6 +40,35 @@ Flags:
 - `--local-only`: ignore global config
 - `--dry-run`: show what would change, write nothing
 - `--verbose` / `-v`: more logs
+
+## `skiller install`
+
+Runs the local `skills install` command, then runs `skiller apply`.
+
+Flags:
+
+- `--project-root <path>`: project root (default: cwd)
+- `--verbose` / `-v`: more logs for the follow-up `apply`
+- any trailing args are passed through to `skills install`
+
+## `skiller update`
+
+Runs the local `skills update` command, then runs `skiller apply`.
+
+Flags:
+
+- `--project-root <path>`: project root (default: cwd)
+- `--verbose` / `-v`: more logs for the follow-up `apply`
+- any trailing args are passed through to `skills update`
+
+## `skiller outdated`
+
+Runs the local `skills outdated` command.
+
+Flags:
+
+- `--project-root <path>`: project root (default: cwd)
+- any trailing args are passed through to `skills outdated`
 
 ## `skiller revert`
 

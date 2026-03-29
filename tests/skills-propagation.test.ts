@@ -108,15 +108,19 @@ Use this well.`,
       ),
     ).rejects.toThrow();
 
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(tmpDir, '.agents', '.skiller.json'), 'utf8'),
-    ) as { localSkills: string[] };
-    expect(manifest.localSkills).toEqual(['local-skill']);
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', '.skiller.json')),
+    ).rejects.toThrow();
   });
 
-  it('prunes stale localSkills entries when their .mdc sources were deleted', async () => {
+  it('removes stale localSkills-only manifests when their .mdc sources were deleted', async () => {
     const rulesDir = path.join(tmpDir, '.agents', 'rules');
-    const upstreamSkillDir = path.join(tmpDir, '.agents', 'skills', 'find-skills');
+    const upstreamSkillDir = path.join(
+      tmpDir,
+      '.agents',
+      'skills',
+      'find-skills',
+    );
     await fs.mkdir(rulesDir, { recursive: true });
     await fs.mkdir(upstreamSkillDir, { recursive: true });
 
@@ -179,11 +183,388 @@ description: Upstream installed skill
       path.join(tmpDir, '.agents'),
     );
 
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(tmpDir, '.agents', '.skiller.json'), 'utf8'),
-    ) as { localSkills: string[] };
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', '.skiller.json')),
+    ).rejects.toThrow();
+  });
 
-    expect(manifest.localSkills).toEqual(['local-skill']);
+  it('does not re-extract orphan canonical skills into .agents/rules during apply', async () => {
+    const orphanSkillDir = path.join(
+      tmpDir,
+      '.agents',
+      'skills',
+      'cli-agent-readiness-reviewer',
+    );
+    await fs.mkdir(orphanSkillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(orphanSkillDir, 'SKILL.md'),
+      `---
+name: cli-agent-readiness-reviewer
+description: Orphan canonical skill
+---
+
+# Orphan canonical skill`,
+    );
+
+    await fs.writeFile(
+      path.join(tmpDir, '.agents', '.skiller.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          targets: {},
+          localSkills: ['cli-agent-readiness-reviewer'],
+        },
+        null,
+        2,
+      ),
+    );
+
+    await propagateSkills(
+      tmpDir,
+      [new ClaudeAgent(), new CodexCliAgent()],
+      true,
+      false,
+      false,
+      path.join(tmpDir, '.agents'),
+    );
+
+    await expect(
+      fs.access(
+        path.join(
+          tmpDir,
+          '.agents',
+          'rules',
+          'cli-agent-readiness-reviewer.mdc',
+        ),
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', '.skiller.json')),
+    ).rejects.toThrow();
+  });
+
+  it('prunes compiled canonical skills when their local rule source was deleted', async () => {
+    const canonicalSkillDir = path.join(
+      tmpDir,
+      '.agents',
+      'skills',
+      'vercel-root-directory-cli',
+    );
+    await fs.mkdir(canonicalSkillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(canonicalSkillDir, 'SKILL.md'),
+      `---
+name: vercel-root-directory-cli
+description: Skill: vercel-root-directory-cli
+metadata:
+  skiller:
+    source: .agents/rules/vercel-root-directory-cli.mdc
+---
+
+# Vercel Root Directory vs CLI Deploy`,
+    );
+
+    const claudeMirrorDir = path.join(
+      tmpDir,
+      '.claude',
+      'skills',
+      'vercel-root-directory-cli',
+    );
+    await fs.mkdir(claudeMirrorDir, { recursive: true });
+    await fs.writeFile(
+      path.join(claudeMirrorDir, 'SKILL.md'),
+      `---
+name: vercel-root-directory-cli
+description: stale mirror
+---
+
+mirror`,
+    );
+
+    const codexMirrorDir = path.join(
+      tmpDir,
+      '.codex',
+      'skills',
+      'vercel-root-directory-cli',
+    );
+    await fs.mkdir(codexMirrorDir, { recursive: true });
+    await fs.writeFile(
+      path.join(codexMirrorDir, 'SKILL.md'),
+      `---
+name: vercel-root-directory-cli
+description: stale mirror
+---
+
+mirror`,
+    );
+
+    await fs.writeFile(
+      path.join(tmpDir, '.agents', '.skiller.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          targets: {},
+          localSkills: ['vercel-root-directory-cli'],
+        },
+        null,
+        2,
+      ),
+    );
+
+    await propagateSkills(
+      tmpDir,
+      [new ClaudeAgent(), new CodexCliAgent()],
+      true,
+      false,
+      false,
+      path.join(tmpDir, '.agents'),
+    );
+
+    await expect(fs.access(canonicalSkillDir)).rejects.toThrow();
+    await expect(fs.access(claudeMirrorDir)).rejects.toThrow();
+    await expect(fs.access(codexMirrorDir)).rejects.toThrow();
+    await expect(
+      fs.access(
+        path.join(tmpDir, '.agents', 'rules', 'vercel-root-directory-cli.mdc'),
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', '.skiller.json')),
+    ).rejects.toThrow();
+  });
+
+  it('prunes stale claude-* local aliases when the base rule already exists with identical content', async () => {
+    const rulesDir = path.join(tmpDir, '.agents', 'rules');
+    await fs.mkdir(rulesDir, { recursive: true });
+
+    const translateRule = `---
+description: 'Command: translate'
+---
+
+Translate the file.`;
+
+    await fs.writeFile(path.join(rulesDir, 'translate.mdc'), translateRule);
+    await fs.writeFile(
+      path.join(rulesDir, 'claude-translate.mdc'),
+      translateRule,
+    );
+
+    const staleCanonicalAliasDir = path.join(
+      tmpDir,
+      '.agents',
+      'skills',
+      'claude-translate',
+    );
+    await fs.mkdir(staleCanonicalAliasDir, { recursive: true });
+    await fs.writeFile(
+      path.join(staleCanonicalAliasDir, 'SKILL.md'),
+      `---
+name: claude-translate
+description: stale alias
+---
+
+stale alias`,
+    );
+
+    const staleClaudeAliasDir = path.join(
+      tmpDir,
+      '.claude',
+      'skills',
+      'claude-translate',
+    );
+    await fs.mkdir(staleClaudeAliasDir, { recursive: true });
+    await fs.writeFile(
+      path.join(staleClaudeAliasDir, 'SKILL.md'),
+      `---
+name: claude-translate
+description: stale alias
+---
+
+stale alias`,
+    );
+
+    const staleCodexAliasDir = path.join(
+      tmpDir,
+      '.codex',
+      'skills',
+      'claude-translate',
+    );
+    await fs.mkdir(staleCodexAliasDir, { recursive: true });
+    await fs.writeFile(
+      path.join(staleCodexAliasDir, 'SKILL.md'),
+      `---
+name: claude-translate
+description: stale alias
+---
+
+stale alias`,
+    );
+
+    await propagateSkills(
+      tmpDir,
+      [new ClaudeAgent(), new CodexCliAgent()],
+      true,
+      false,
+      false,
+      path.join(tmpDir, '.agents'),
+    );
+
+    await expect(
+      fs.access(path.join(rulesDir, 'claude-translate.mdc')),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', 'skills', 'claude-translate')),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(tmpDir, '.claude', 'skills', 'claude-translate')),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(tmpDir, '.codex', 'skills', 'claude-translate')),
+    ).rejects.toThrow();
+
+    await expect(
+      fs.access(path.join(rulesDir, 'translate.mdc')),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(
+        path.join(tmpDir, '.agents', 'skills', 'translate', 'SKILL.md'),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(tmpDir, '.claude', 'skills', 'translate')),
+    ).resolves.toBeUndefined();
+  });
+
+  it('keeps claude-* local aliases when their rule content is different', async () => {
+    const rulesDir = path.join(tmpDir, '.agents', 'rules');
+    await fs.mkdir(rulesDir, { recursive: true });
+
+    await fs.writeFile(
+      path.join(rulesDir, 'translate.mdc'),
+      `---
+description: 'Command: translate'
+---
+
+Translate the file.`,
+    );
+    await fs.writeFile(
+      path.join(rulesDir, 'claude-translate.mdc'),
+      `---
+description: Alternate translate flow
+---
+
+Translate the file, but differently.`,
+    );
+
+    await propagateSkills(
+      tmpDir,
+      [new ClaudeAgent(), new CodexCliAgent()],
+      true,
+      false,
+      false,
+      path.join(tmpDir, '.agents'),
+    );
+
+    await expect(
+      fs.access(path.join(rulesDir, 'claude-translate.mdc')),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(
+        path.join(tmpDir, '.agents', 'skills', 'claude-translate', 'SKILL.md'),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('does not generate skills from .claude commands and cleans legacy claude-managed mirrors', async () => {
+    const canonicalSkillDir = path.join(
+      tmpDir,
+      '.agents',
+      'skills',
+      'local-skill',
+    );
+    await fs.mkdir(canonicalSkillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(canonicalSkillDir, 'SKILL.md'),
+      `---
+name: local-skill
+description: Local skill
+---
+
+Canonical content.`,
+    );
+
+    const projectClaudeDir = path.join(tmpDir, '.claude');
+    await fs.mkdir(path.join(projectClaudeDir, 'commands'), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(projectClaudeDir, 'commands', 'do-thing.md'),
+      `---
+description: Do the thing
+---
+
+From claude command.`,
+    );
+
+    await fs.writeFile(
+      path.join(tmpDir, '.agents', '.skiller.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          targets: {
+            '.claude/skills': [
+              {
+                sourceType: 'claude',
+                sourceKind: 'command',
+                sourceRelPath: '.claude/commands/do-thing.md',
+                destRelPath: 'do-thing',
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const staleClaudeManagedDir = path.join(
+      tmpDir,
+      '.claude',
+      'skills',
+      'do-thing',
+    );
+    await fs.mkdir(staleClaudeManagedDir, { recursive: true });
+    await fs.writeFile(
+      path.join(staleClaudeManagedDir, 'SKILL.md'),
+      `---
+name: do-thing
+description: stale claude mirror
+---
+
+stale`,
+    );
+
+    await propagateSkills(
+      tmpDir,
+      [new ClaudeAgent(), new CodexCliAgent()],
+      true,
+      false,
+      false,
+      path.join(tmpDir, '.agents'),
+    );
+
+    await expect(
+      fs.access(path.join(tmpDir, '.claude', 'skills', 'do-thing')),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(tmpDir, '.claude', 'skills', 'local-skill')),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', '.skiller.json')),
+    ).rejects.toThrow();
   });
 
   it('inlines embedded reference directives when compiling local rules', async () => {
@@ -296,10 +677,9 @@ description: Orphan skill
     expect(ruleContent).toContain('description: Orphan skill');
     expect(ruleContent).toContain('# Orphan body');
 
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(tmpDir, '.agents', '.skiller.json'), 'utf8'),
-    ) as { localSkills: string[] };
-    expect(manifest.localSkills).toEqual(['orphan-skill']);
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', '.skiller.json')),
+    ).rejects.toThrow();
   });
 
   it('extracts nested-frontmatter canonical skills into a single-frontmatter local rule', async () => {
@@ -551,7 +931,7 @@ alwaysApply: true
     ).rejects.toThrow();
   });
 
-  it('creates local rules for orphan canonical skills during propagation', async () => {
+  it('leaves orphan canonical skills alone during propagation', async () => {
     const canonicalSkillDir = path.join(
       tmpDir,
       '.agents',
@@ -580,18 +960,17 @@ description: Plain local skill
       path.join(tmpDir, '.agents'),
     );
 
-    const extractedRule = await fs.readFile(
-      path.join(tmpDir, '.agents', 'rules', 'plain-local.mdc'),
-      'utf8',
-    );
-    expect(extractedRule).toContain('description: Plain local skill');
-    expect(extractedRule).toContain('# Plain local body');
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', 'rules', 'plain-local.mdc')),
+    ).rejects.toThrow();
 
     const canonicalSkill = await fs.readFile(
       path.join(tmpDir, '.agents', 'skills', 'plain-local', 'SKILL.md'),
       'utf8',
     );
-    expect(canonicalSkill).toContain('source: .agents/rules/plain-local.mdc');
+    expect(canonicalSkill).not.toContain(
+      'source: .agents/rules/plain-local.mdc',
+    );
     expect(canonicalSkill).toContain('# Plain local body');
   });
 });

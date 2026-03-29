@@ -5,9 +5,11 @@ import {
   checkHandler,
   findHandler,
   initHandler,
+  installHandler,
   listHandler,
   migrateClaudePluginsHandler,
   migrateRulesToSkillsHandler,
+  outdatedHandler,
   removeHandler,
   revertHandler,
   skillsHandler,
@@ -15,17 +17,22 @@ import {
 } from './handlers';
 import {
   ApplyArgs,
+  InstallArgs,
   InitArgs,
   MigrateClaudePluginsArgs,
   MigrateRulesToSkillsArgs,
   RevertArgs,
   SkillsPassthroughArgs,
   SkillsWrapperArgs,
+  UpdateArgs,
 } from './handlers';
 import { getAgentIdentifiersForCliHelp } from '../agents/index';
 
 function skillsArgsBuilder(y: Argv) {
   return y
+    .parserConfiguration({
+      'unknown-options-as-args': true,
+    })
     .option('project-root', {
       type: 'string',
       description: 'Project root directory',
@@ -62,8 +69,7 @@ function migrateRulesToSkillsArgsBuilder(y: Argv) {
     })
     .option('execute', {
       type: 'boolean',
-      description:
-        'Actually replace selected local rules after detection',
+      description: 'Actually replace selected local rules after detection',
       default: false,
     })
     .option('yes', {
@@ -168,13 +174,27 @@ export async function run(): Promise<void> {
     .command<SkillsWrapperArgs>(
       'add [args..]',
       'Run the local skills CLI add command',
-      skillsArgsBuilder,
+      (y: Argv) =>
+        skillsArgsBuilder(y)
+          .option('verbose', {
+            type: 'boolean',
+            description: 'Enable verbose logging for the follow-up apply step',
+            default: false,
+          })
+          .alias('verbose', 'v'),
       addHandler,
     )
     .command<SkillsWrapperArgs>(
       'remove [args..]',
       'Run the local skills CLI remove command',
-      skillsArgsBuilder,
+      (y: Argv) =>
+        skillsArgsBuilder(y)
+          .option('verbose', {
+            type: 'boolean',
+            description: 'Enable verbose logging for the follow-up apply step',
+            default: false,
+          })
+          .alias('verbose', 'v'),
       removeHandler,
     )
     .command<SkillsWrapperArgs>(
@@ -195,11 +215,37 @@ export async function run(): Promise<void> {
       skillsArgsBuilder,
       checkHandler,
     )
-    .command<SkillsWrapperArgs>(
+    .command<InstallArgs>(
+      'install [args..]',
+      'Restore lock-backed skills with the local skills CLI experimental_install command, then skiller apply',
+      (y: Argv) =>
+        skillsArgsBuilder(y)
+          .option('verbose', {
+            type: 'boolean',
+            description: 'Enable verbose logging for the follow-up apply step',
+            default: false,
+          })
+          .alias('verbose', 'v'),
+      installHandler,
+    )
+    .command<UpdateArgs>(
       'update [args..]',
-      'Run the local skills CLI update command',
-      skillsArgsBuilder,
+      'Run the local skills CLI update command, then skiller apply',
+      (y: Argv) =>
+        skillsArgsBuilder(y)
+          .option('verbose', {
+            type: 'boolean',
+            description: 'Enable verbose logging for the follow-up apply step',
+            default: false,
+          })
+          .alias('verbose', 'v'),
       updateHandler,
+    )
+    .command<SkillsWrapperArgs>(
+      'outdated [args..]',
+      'Run the local skills CLI outdated command',
+      skillsArgsBuilder,
+      outdatedHandler,
     )
     .command<SkillsPassthroughArgs>(
       'skills <subcommand> [args..]',
@@ -213,7 +259,7 @@ export async function run(): Promise<void> {
     )
     .command<InitArgs>(
       'init',
-      'Scaffold a .claude directory with default files',
+      'Scaffold a .agents directory with default files',
       (y: Argv) => {
         return y
           .option('project-root', {
