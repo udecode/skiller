@@ -53,6 +53,31 @@ describe('SkillOwnership', () => {
     expect([...names]).toEqual(['anotherSkill', 'ce-review', 'vendorSkill']);
   });
 
+  it('includes skiller-lock.json names in upstream-owned skills', async () => {
+    await fs.writeFile(
+      path.join(tmpDir, 'skiller-lock.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          skills: {
+            'learnings-researcher': {
+              source: 'EveryInc/compound-engineering-plugin',
+              sourceType: 'github',
+              sourceRelPath:
+                'plugins/compound-engineering/agents/research/learnings-researcher.md',
+              computedHash: 'abc',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const names = await readUpstreamOwnedSkillNames(tmpDir);
+    expect([...names]).toEqual(['learnings-researcher']);
+  });
+
   it('ignores stale .agents/.skiller.json localSkills without matching rule files', async () => {
     await fs.writeFile(
       path.join(tmpDir, '.agents', '.skiller.json'),
@@ -112,7 +137,7 @@ description: Orphaned skill
     const ownership = await resolveSkillOwnership(tmpDir);
     expect([...ownership.orphaned]).toEqual(['orphan-skill']);
     expect(ownership.warnings).toContain(
-      "Canonical skill 'orphan-skill' is unmanaged; leaving it untouched because it is not in skills-lock.json or .agents/rules/orphan-skill.mdc.",
+      "Canonical skill 'orphan-skill' is unmanaged; leaving it untouched because it is not in skills-lock.json, skiller-lock.json, or .agents/rules/orphan-skill.mdc.",
     );
   });
 

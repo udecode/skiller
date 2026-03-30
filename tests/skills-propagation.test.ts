@@ -645,7 +645,7 @@ description: No chance
     await expect(
       compileRulesToSkills(path.join(tmpDir, '.agents'), tmpDir, false, false),
     ).rejects.toThrow(
-      "Local rule 'conflict' conflicts with upstream-managed skill 'conflict'",
+      "Local rule 'conflict' conflicts with lock-managed skill 'conflict'",
     );
   });
 

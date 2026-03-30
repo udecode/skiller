@@ -28,6 +28,18 @@ import {
   getCanonicalSkillsDir,
   resolveSkillOwnership,
 } from '../core/SkillOwnership';
+import {
+  buildAdjustedSkillsAddArgs,
+  extractAddSource,
+  getOutdatedAgentSkills,
+  hasGlobalFlag,
+  hasListFlag,
+  inspectCompatibleSource,
+  installAgentSkillsFromInspection,
+  removeAgentManagedSkills,
+  restoreAgentSkillsFromLock,
+  updateAgentSkillsFromLock,
+} from '../core/AgentSourceCompatibility';
 import * as readline from 'readline/promises';
 
 export interface ApplyArgs {
@@ -851,14 +863,70 @@ export async function migrateRulesToSkillsHandler(
 }
 
 export async function addHandler(argv: SkillsWrapperArgs): Promise<void> {
-  await executeSkillsWrapper(argv['project-root'], [
-    'add',
-    ...(argv.args ?? []),
-  ]);
-  await applyAfterSkillsLifecycleStep(
-    argv['project-root'],
-    argv.verbose ?? false,
-  );
+  const projectRoot = argv['project-root'];
+  const args = argv.args ?? [];
+
+  if (hasGlobalFlag(args)) {
+    throw new Error(
+      'Agent-compatible installs are project-scoped only. Drop --global and retry.',
+    );
+  }
+
+  const source = extractAddSource(args);
+  let inspection:
+    | Awaited<ReturnType<typeof inspectCompatibleSource>>
+    | undefined;
+  let installedAgentSkills = false;
+
+  try {
+    if (source) {
+      inspection = await inspectCompatibleSource(source, args);
+    }
+
+    if (inspection && hasListFlag(args)) {
+      if (inspection.nativeSkillNames.length > 0) {
+        await executeSkillsWrapper(projectRoot, [
+          'add',
+          ...buildAdjustedSkillsAddArgs(args, inspection.nativeSkillNames),
+        ]);
+      }
+
+      if (inspection.agentSkills.length > 0) {
+        console.log('[skiller] Compatible agent-derived skills:');
+        for (const agentSkill of inspection.agentSkills) {
+          console.log(`- ${agentSkill.installName}`);
+        }
+      }
+
+      return;
+    }
+
+    if (inspection && inspection.nativeSkillNames.length > 0) {
+      await executeSkillsWrapper(projectRoot, [
+        'add',
+        ...buildAdjustedSkillsAddArgs(args, inspection.nativeSkillNames),
+      ]);
+    } else if (!inspection || inspection.agentSkills.length === 0) {
+      await executeSkillsWrapper(projectRoot, ['add', ...args]);
+    }
+
+    if (inspection && inspection.agentSkills.length > 0) {
+      const installed = await installAgentSkillsFromInspection(
+        projectRoot,
+        inspection,
+      );
+      installedAgentSkills = true;
+      console.log(
+        `[skiller] Installed ${installed.length} agent-derived skill(s): ${installed.join(', ')}`,
+      );
+    }
+  } finally {
+    if (inspection && !installedAgentSkills) {
+      await inspection.workspace.cleanup();
+    }
+  }
+
+  await applyAfterSkillsLifecycleStep(projectRoot, argv.verbose ?? false);
 }
 
 export async function installHandler(argv: InstallArgs): Promise<void> {
@@ -866,6 +934,17 @@ export async function installHandler(argv: InstallArgs): Promise<void> {
     'experimental_install',
     ...(argv.args ?? []),
   ]);
+  const restored = await restoreAgentSkillsFromLock(argv['project-root']);
+  if (restored.restored.length > 0) {
+    console.log(
+      `[skiller] Restored ${restored.restored.length} agent-derived skill(s): ${restored.restored.join(', ')}`,
+    );
+  }
+  if (restored.warnings.length > 0) {
+    console.log(
+      restored.warnings.map((warning) => `[skiller] ${warning}`).join('\n'),
+    );
+  }
   await applyAfterSkillsLifecycleStep(
     argv['project-root'],
     argv.verbose ?? false,
@@ -873,19 +952,29 @@ export async function installHandler(argv: InstallArgs): Promise<void> {
 }
 
 export async function removeHandler(argv: SkillsWrapperArgs): Promise<void> {
-  await executeSkillsWrapper(argv['project-root'], [
-    'remove',
-    ...(argv.args ?? []),
-  ]);
+  const projectRoot = argv['project-root'];
+  const args = argv.args ?? [];
+  const requestedNames = normalizeRequestedSkillNames(args);
+  const ownership = await resolveSkillOwnership(projectRoot);
+  const shouldRunSkillsRemove =
+    requestedNames.length === 0 ||
+    args.some(
+      (arg) =>
+        arg === '--all' ||
+        arg === '--agent' ||
+        arg === '-a' ||
+        arg === '--skill' ||
+        arg === '-s',
+    ) ||
+    requestedNames.some((name) => ownership.upstreamOwned.has(name));
+
+  if (shouldRunSkillsRemove) {
+    await executeSkillsWrapper(projectRoot, ['remove', ...args]);
+  }
   await scrubRequestedSkillsLockEntries(argv['project-root'], argv.args ?? []);
-  await pruneRequestedUnmanagedSkillOutputs(
-    argv['project-root'],
-    argv.args ?? [],
-  );
-  await applyAfterSkillsLifecycleStep(
-    argv['project-root'],
-    argv.verbose ?? false,
-  );
+  await pruneRequestedUnmanagedSkillOutputs(projectRoot, args);
+  await removeAgentManagedSkills(projectRoot, requestedNames);
+  await applyAfterSkillsLifecycleStep(projectRoot, argv.verbose ?? false);
 }
 
 export async function listHandler(argv: SkillsWrapperArgs): Promise<void> {
@@ -914,6 +1003,17 @@ export async function updateHandler(argv: UpdateArgs): Promise<void> {
     'update',
     ...(argv.args ?? []),
   ]);
+  const updated = await updateAgentSkillsFromLock(argv['project-root']);
+  if (updated.updated.length > 0) {
+    console.log(
+      `[skiller] Updated ${updated.updated.length} agent-derived skill(s): ${updated.updated.join(', ')}`,
+    );
+  }
+  if (updated.warnings.length > 0) {
+    console.log(
+      updated.warnings.map((warning) => `[skiller] ${warning}`).join('\n'),
+    );
+  }
   await applyAfterSkillsLifecycleStep(
     argv['project-root'],
     argv.verbose ?? false,
@@ -925,6 +1025,17 @@ export async function outdatedHandler(argv: SkillsWrapperArgs): Promise<void> {
     'outdated',
     ...(argv.args ?? []),
   ]);
+  const outdated = await getOutdatedAgentSkills(argv['project-root']);
+  if (outdated.outdated.length > 0) {
+    console.log(
+      `[skiller] Agent-derived updates available:\n${outdated.outdated.map((name) => `- ${name}`).join('\n')}`,
+    );
+  }
+  if (outdated.warnings.length > 0) {
+    console.log(
+      outdated.warnings.map((warning) => `[skiller] ${warning}`).join('\n'),
+    );
+  }
 }
 
 export async function skillsHandler(

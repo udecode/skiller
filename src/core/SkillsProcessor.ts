@@ -20,9 +20,7 @@ import {
   writeSkillsManifestEntries,
   type SkillsManifestEntry,
 } from './SkillsManifest';
-import {
-  resolveSkillOwnership,
-} from './SkillOwnership';
+import { resolveSkillOwnership } from './SkillOwnership';
 
 const LEGACY_CODEX_SKILLS_PATH = path.join('.codex', 'skills');
 const UNIVERSAL_AGENTS_SKILLS_PATH = path.join('.agents', 'skills');
@@ -1004,7 +1002,7 @@ export async function compileRulesToSkills(
     const skillName = path.basename(ruleFile.name, '.mdc');
     if (ownership.upstreamOwned.has(skillName)) {
       throw new Error(
-        `Local rule '${skillName}' conflicts with upstream-managed skill '${skillName}' in skills-lock.json`,
+        `Local rule '${skillName}' conflicts with lock-managed skill '${skillName}' in skills-lock.json or skiller-lock.json`,
       );
     }
 

@@ -8,6 +8,7 @@ import {
   SKILLER_CONFIG_FILE,
 } from './project-paths';
 import { parseFrontmatter } from './FrontmatterParser';
+import { readSkillerLockNames } from './SkillerLock';
 
 export interface ResolvedSkillOwnership {
   upstreamOwned: Set<string>;
@@ -427,18 +428,24 @@ async function readCanonicalSkillNames(
 export async function readUpstreamOwnedSkillNames(
   projectRoot: string,
 ): Promise<Set<string>> {
+  const upstreamOwned = new Set<string>();
+
   try {
     const raw = JSON.parse(
       await fs.readFile(getSkillsLockPath(projectRoot), 'utf8'),
     ) as { skills?: Record<string, unknown> };
-    return new Set(
-      Object.keys(raw.skills ?? {})
-        .map(normalizeSkillNameForFilesystem)
-        .sort((a, b) => a.localeCompare(b)),
-    );
+    for (const key of Object.keys(raw.skills ?? {})) {
+      upstreamOwned.add(normalizeSkillNameForFilesystem(key));
+    }
   } catch {
-    return new Set();
+    // Ignore missing or invalid skills-lock.json.
   }
+
+  for (const key of await readSkillerLockNames(projectRoot)) {
+    upstreamOwned.add(normalizeSkillNameForFilesystem(key));
+  }
+
+  return new Set([...upstreamOwned].sort((a, b) => a.localeCompare(b)));
 }
 
 export async function resolveSkillOwnership(
@@ -467,12 +474,12 @@ export async function resolveSkillOwnership(
   const warnings = [
     ...conflicts.map((name) => {
       const owners: string[] = [];
-      if (upstreamOwned.has(name)) owners.push('skills-lock.json');
+      if (upstreamOwned.has(name)) owners.push('upstream lock');
       if (localOwned.has(name)) owners.push('.agents/rules');
       return `Skill '${name}' has mixed ownership: ${owners.join(', ')}`;
     }),
     ...[...orphaned].map((name) => {
-      return `Canonical skill '${name}' is unmanaged; leaving it untouched because it is not in skills-lock.json or .agents/rules/${name}.mdc.`;
+      return `Canonical skill '${name}' is unmanaged; leaving it untouched because it is not in skills-lock.json, skiller-lock.json, or .agents/rules/${name}.mdc.`;
     }),
   ];
 

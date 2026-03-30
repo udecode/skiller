@@ -173,7 +173,7 @@ export async function run(): Promise<void> {
     )
     .command<SkillsWrapperArgs>(
       'add [args..]',
-      'Run the local skills CLI add command',
+      'Run the local skills CLI add command and install compatible agent sources into .agents/skills',
       (y: Argv) =>
         skillsArgsBuilder(y)
           .option('verbose', {
@@ -186,7 +186,7 @@ export async function run(): Promise<void> {
     )
     .command<SkillsWrapperArgs>(
       'remove [args..]',
-      'Run the local skills CLI remove command',
+      'Run the local skills CLI remove command, prune compatible agent installs, then skiller apply',
       (y: Argv) =>
         skillsArgsBuilder(y)
           .option('verbose', {
@@ -217,7 +217,7 @@ export async function run(): Promise<void> {
     )
     .command<InstallArgs>(
       'install [args..]',
-      'Restore lock-backed skills with the local skills CLI experimental_install command, then skiller apply',
+      'Restore lock-backed skills plus skiller-managed agent installs from lockfiles, then skiller apply',
       (y: Argv) =>
         skillsArgsBuilder(y)
           .option('verbose', {
@@ -230,7 +230,7 @@ export async function run(): Promise<void> {
     )
     .command<UpdateArgs>(
       'update [args..]',
-      'Run the local skills CLI update command, then skiller apply',
+      'Update local skills CLI installs plus skiller-managed agent installs, then skiller apply',
       (y: Argv) =>
         skillsArgsBuilder(y)
           .option('verbose', {
@@ -243,7 +243,7 @@ export async function run(): Promise<void> {
     )
     .command<SkillsWrapperArgs>(
       'outdated [args..]',
-      'Run the local skills CLI outdated command',
+      'Run the local skills CLI outdated command and report outdated skiller-managed agent installs',
       skillsArgsBuilder,
       outdatedHandler,
     )

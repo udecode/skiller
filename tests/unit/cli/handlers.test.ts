@@ -25,6 +25,14 @@ import {
   removeLocalRuleReplacementState,
 } from '../../../src/core/RulesToSkillsMigration';
 import { resolveSkillOwnership } from '../../../src/core/SkillOwnership';
+import {
+  getOutdatedAgentSkills,
+  inspectCompatibleSource,
+  installAgentSkillsFromInspection,
+  removeAgentManagedSkills,
+  restoreAgentSkillsFromLock,
+  updateAgentSkillsFromLock,
+} from '../../../src/core/AgentSourceCompatibility';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -45,6 +53,15 @@ jest.mock('../../../src/core/RulesToSkillsMigration', () => ({
 jest.mock('../../../src/core/SkillOwnership', () => ({
   ...jest.requireActual('../../../src/core/SkillOwnership'),
   resolveSkillOwnership: jest.fn(),
+}));
+jest.mock('../../../src/core/AgentSourceCompatibility', () => ({
+  ...jest.requireActual('../../../src/core/AgentSourceCompatibility'),
+  getOutdatedAgentSkills: jest.fn(),
+  inspectCompatibleSource: jest.fn(),
+  installAgentSkillsFromInspection: jest.fn(),
+  removeAgentManagedSkills: jest.fn(),
+  restoreAgentSkillsFromLock: jest.fn(),
+  updateAgentSkillsFromLock: jest.fn(),
 }));
 
 describe('CLI Handlers', () => {
@@ -73,6 +90,28 @@ describe('CLI Handlers', () => {
       localOwned: new Set<string>(),
       orphaned: new Set<string>(),
       conflicts: [],
+      warnings: [],
+    });
+    (getOutdatedAgentSkills as jest.Mock).mockResolvedValue({
+      outdated: [],
+      warnings: [],
+    });
+    (inspectCompatibleSource as jest.Mock).mockResolvedValue({
+      agentSkills: [],
+      nativeSkillNames: [],
+      workspace: {
+        cleanup: jest.fn().mockResolvedValue(undefined),
+        parsed: { source: 'owner/repo', type: 'github', url: 'https://github.com/owner/repo.git' },
+      },
+    });
+    (installAgentSkillsFromInspection as jest.Mock).mockResolvedValue([]);
+    (removeAgentManagedSkills as jest.Mock).mockResolvedValue([]);
+    (restoreAgentSkillsFromLock as jest.Mock).mockResolvedValue({
+      restored: [],
+      warnings: [],
+    });
+    (updateAgentSkillsFromLock as jest.Mock).mockResolvedValue({
+      updated: [],
       warnings: [],
     });
     // Mock loadConfig to return default config
@@ -429,6 +468,39 @@ describe('CLI Handlers', () => {
       );
     });
 
+    it('installs compatible agent sources without calling skills add when no native skills match', async () => {
+      (inspectCompatibleSource as jest.Mock).mockResolvedValue({
+        agentSkills: [{ installName: 'learnings-researcher' }],
+        nativeSkillNames: [],
+        workspace: {
+          cleanup: jest.fn().mockResolvedValue(undefined),
+          parsed: {
+            source: 'EveryInc/compound-engineering-plugin',
+            type: 'github',
+            url: 'https://github.com/EveryInc/compound-engineering-plugin.git',
+          },
+        },
+      });
+      (installAgentSkillsFromInspection as jest.Mock).mockResolvedValue([
+        'learnings-researcher',
+      ]);
+
+      await addHandler({
+        'project-root': mockProjectRoot,
+        args: [
+          'EveryInc/compound-engineering-plugin',
+          '--skill',
+          'learnings-researcher',
+          '-y',
+        ],
+        verbose: false,
+      });
+
+      expect(runSkillsCli).not.toHaveBeenCalled();
+      expect(installAgentSkillsFromInspection).toHaveBeenCalled();
+      expect(applyAllAgentConfigs).toHaveBeenCalled();
+    });
+
     it('delegates update to the pinned local skills CLI', async () => {
       await updateHandler({
         'project-root': mockProjectRoot,
@@ -440,6 +512,7 @@ describe('CLI Handlers', () => {
         'update',
         '--all',
       ]);
+      expect(updateAgentSkillsFromLock).toHaveBeenCalledWith(mockProjectRoot);
       expect(applyAllAgentConfigs).toHaveBeenCalledWith(
         mockProjectRoot,
         undefined,
@@ -467,6 +540,7 @@ describe('CLI Handlers', () => {
         'experimental_install',
         '--frozen',
       ]);
+      expect(restoreAgentSkillsFromLock).toHaveBeenCalledWith(mockProjectRoot);
       expect(applyAllAgentConfigs).toHaveBeenCalledWith(
         mockProjectRoot,
         undefined,
@@ -493,10 +567,19 @@ describe('CLI Handlers', () => {
         'outdated',
         '--json',
       ]);
+      expect(getOutdatedAgentSkills).toHaveBeenCalledWith(mockProjectRoot);
       expect(applyAllAgentConfigs).not.toHaveBeenCalled();
     });
 
     it('delegates remove/list/find/check wrappers to the pinned local skills CLI', async () => {
+      (resolveSkillOwnership as jest.Mock).mockResolvedValue({
+        upstreamOwned: new Set<string>(['react']),
+        localOwned: new Set<string>(),
+        orphaned: new Set<string>(),
+        conflicts: [],
+        warnings: [],
+      });
+
       await removeHandler({
         'project-root': mockProjectRoot,
         args: ['react'],
@@ -531,6 +614,9 @@ describe('CLI Handlers', () => {
         'check',
         '--strict',
       ]);
+      expect(removeAgentManagedSkills).toHaveBeenCalledWith(mockProjectRoot, [
+        'react',
+      ]);
       expect(applyAllAgentConfigs).toHaveBeenCalledWith(
         mockProjectRoot,
         undefined,
@@ -562,11 +648,7 @@ describe('CLI Handlers', () => {
         verbose: true,
       });
 
-      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
-        'remove',
-        'react',
-        '-y',
-      ]);
+      expect(runSkillsCli).not.toHaveBeenCalled();
       expect(fs.rm).toHaveBeenCalledWith(
         path.join(mockProjectRoot, '.agents', 'skills', 'react'),
         { force: true, recursive: true },
