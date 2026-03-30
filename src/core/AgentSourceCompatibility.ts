@@ -59,12 +59,84 @@ export interface CompatibleSourceInspection {
   workspace: SourceWorkspace;
 }
 
+interface NativeSkillLockEntry {
+  computedHash: string;
+  source: string;
+  sourceType: string;
+}
+
+interface NativeSkillLockFile {
+  skills: Record<string, NativeSkillLockEntry>;
+  version: number;
+}
+
+export interface LockPruneResult {
+  prunedKeys: string[];
+  prunedOutputNames: string[];
+  warnings: string[];
+}
+
+const NATIVE_SKILLS_LOCK_VERSION = 1;
+
 function hashContent(content: string): string {
   return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
 function normalizeSkillNameForFilesystem(name: string): string {
   return name.trim().replace(/:/g, '-');
+}
+
+function createEmptyNativeSkillsLock(): NativeSkillLockFile {
+  return {
+    version: NATIVE_SKILLS_LOCK_VERSION,
+    skills: {},
+  };
+}
+
+async function readNativeSkillsLock(
+  projectRoot: string,
+): Promise<NativeSkillLockFile> {
+  try {
+    const raw = JSON.parse(
+      await fs.readFile(path.join(projectRoot, 'skills-lock.json'), 'utf8'),
+    ) as NativeSkillLockFile;
+    if (
+      raw.version !== NATIVE_SKILLS_LOCK_VERSION ||
+      !raw.skills ||
+      typeof raw.skills !== 'object'
+    ) {
+      return createEmptyNativeSkillsLock();
+    }
+    return raw;
+  } catch {
+    return createEmptyNativeSkillsLock();
+  }
+}
+
+async function writeNativeSkillsLock(
+  projectRoot: string,
+  lock: NativeSkillLockFile,
+): Promise<void> {
+  const sortedSkills: Record<string, NativeSkillLockEntry> = {};
+
+  for (const key of Object.keys(lock.skills).sort((a, b) =>
+    a.localeCompare(b),
+  )) {
+    sortedSkills[key] = lock.skills[key]!;
+  }
+
+  await fs.writeFile(
+    path.join(projectRoot, 'skills-lock.json'),
+    JSON.stringify(
+      {
+        version: NATIVE_SKILLS_LOCK_VERSION,
+        skills: sortedSkills,
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf8',
+  );
 }
 
 function isLocalPath(input: string): boolean {
@@ -722,10 +794,15 @@ export async function installAgentSkillsFromInspection(
   return installed.sort((a, b) => a.localeCompare(b));
 }
 
-function groupLockEntriesBySource(
-  skills: Record<string, SkillerLockEntry>,
-): Map<string, Array<[string, SkillerLockEntry]>> {
-  const groups = new Map<string, Array<[string, SkillerLockEntry]>>();
+function groupLockEntriesBySource<
+  T extends {
+    ref?: string;
+    source: string;
+    sourceType: string;
+    subpath?: string;
+  },
+>(skills: Record<string, T>): Map<string, Array<[string, T]>> {
+  const groups = new Map<string, Array<[string, T]>>();
 
   for (const [skillName, entry] of Object.entries(skills)) {
     const key = JSON.stringify([
@@ -921,4 +998,111 @@ export async function removeAgentManagedSkills(
   }
 
   return removed;
+}
+
+export async function pruneMissingNativeSkillsFromLock(
+  projectRoot: string,
+): Promise<LockPruneResult> {
+  const lock = await readNativeSkillsLock(projectRoot);
+  const prunedKeys: string[] = [];
+  const prunedOutputNames: string[] = [];
+  const warnings: string[] = [];
+
+  for (const entries of groupLockEntriesBySource(lock.skills).values()) {
+    const [, entry] = entries[0]!;
+    if (
+      entry.sourceType === 'node_modules' ||
+      entry.sourceType === 'well-known'
+    ) {
+      continue;
+    }
+
+    let workspace: SourceWorkspace | null = null;
+
+    try {
+      workspace = await withSourceWorkspace(entry.source);
+      const availableSkillNames = new Set(
+        await discoverSkillNames(workspace.searchPath),
+      );
+
+      for (const [skillName] of entries) {
+        const installName = normalizeSkillNameForFilesystem(skillName);
+        if (availableSkillNames.has(installName)) continue;
+        prunedKeys.push(skillName);
+        prunedOutputNames.push(installName);
+      }
+    } catch (error) {
+      warnings.push(
+        `Could not inspect '${entry.source}' for stale skills: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      if (workspace) {
+        await workspace.cleanup();
+      }
+    }
+  }
+
+  if (prunedKeys.length > 0) {
+    for (const skillName of prunedKeys) {
+      delete lock.skills[skillName];
+    }
+    await writeNativeSkillsLock(projectRoot, lock);
+  }
+
+  return {
+    prunedKeys: prunedKeys.sort((a, b) => a.localeCompare(b)),
+    prunedOutputNames: prunedOutputNames.sort((a, b) => a.localeCompare(b)),
+    warnings,
+  };
+}
+
+export async function pruneMissingAgentSkillsFromLock(
+  projectRoot: string,
+): Promise<LockPruneResult> {
+  const lock = await readSkillerLock(projectRoot);
+  const prunedKeys: string[] = [];
+  const prunedOutputNames: string[] = [];
+  const warnings: string[] = [];
+
+  for (const entries of groupLockEntriesBySource(lock.skills).values()) {
+    const [, entry] = entries[0]!;
+    let workspace: SourceWorkspace | null = null;
+
+    try {
+      workspace = await withParsedSourceWorkspace(
+        parseSourceFromLockEntry(entry),
+      );
+      const agentSkills = await discoverAgentSkillCandidates(
+        workspace.searchPath,
+        workspace.rootPath,
+      );
+      const candidates = new Set(
+        agentSkills.map((candidate) => candidate.sourceRelPath),
+      );
+
+      for (const [skillName, lockEntry] of entries) {
+        if (candidates.has(lockEntry.sourceRelPath)) continue;
+        prunedKeys.push(skillName);
+        prunedOutputNames.push(normalizeSkillNameForFilesystem(skillName));
+      }
+    } catch (error) {
+      warnings.push(
+        `Could not inspect '${entry.source}' for stale agent-derived skills: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      if (workspace) {
+        await workspace.cleanup();
+      }
+    }
+  }
+
+  if (prunedKeys.length > 0) {
+    await removeSkillerLockEntries(projectRoot, prunedKeys);
+  }
+
+  return {
+    prunedKeys: prunedKeys.sort((a, b) => a.localeCompare(b)),
+    prunedOutputNames: prunedOutputNames.sort((a, b) => a.localeCompare(b)),
+    warnings,
+  };
 }

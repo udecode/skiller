@@ -29,6 +29,8 @@ import {
   getOutdatedAgentSkills,
   inspectCompatibleSource,
   installAgentSkillsFromInspection,
+  pruneMissingAgentSkillsFromLock,
+  pruneMissingNativeSkillsFromLock,
   removeAgentManagedSkills,
   restoreAgentSkillsFromLock,
   updateAgentSkillsFromLock,
@@ -59,6 +61,8 @@ jest.mock('../../../src/core/AgentSourceCompatibility', () => ({
   getOutdatedAgentSkills: jest.fn(),
   inspectCompatibleSource: jest.fn(),
   installAgentSkillsFromInspection: jest.fn(),
+  pruneMissingAgentSkillsFromLock: jest.fn(),
+  pruneMissingNativeSkillsFromLock: jest.fn(),
   removeAgentManagedSkills: jest.fn(),
   restoreAgentSkillsFromLock: jest.fn(),
   updateAgentSkillsFromLock: jest.fn(),
@@ -105,6 +109,16 @@ describe('CLI Handlers', () => {
       },
     });
     (installAgentSkillsFromInspection as jest.Mock).mockResolvedValue([]);
+    (pruneMissingAgentSkillsFromLock as jest.Mock).mockResolvedValue({
+      prunedKeys: [],
+      prunedOutputNames: [],
+      warnings: [],
+    });
+    (pruneMissingNativeSkillsFromLock as jest.Mock).mockResolvedValue({
+      prunedKeys: [],
+      prunedOutputNames: [],
+      warnings: [],
+    });
     (removeAgentManagedSkills as jest.Mock).mockResolvedValue([]);
     (restoreAgentSkillsFromLock as jest.Mock).mockResolvedValue({
       restored: [],
@@ -512,6 +526,12 @@ describe('CLI Handlers', () => {
         'update',
         '--all',
       ]);
+      expect(pruneMissingNativeSkillsFromLock).toHaveBeenCalledWith(
+        mockProjectRoot,
+      );
+      expect(pruneMissingAgentSkillsFromLock).toHaveBeenCalledWith(
+        mockProjectRoot,
+      );
       expect(updateAgentSkillsFromLock).toHaveBeenCalledWith(mockProjectRoot);
       expect(applyAllAgentConfigs).toHaveBeenCalledWith(
         mockProjectRoot,
@@ -540,6 +560,12 @@ describe('CLI Handlers', () => {
         'experimental_install',
         '--frozen',
       ]);
+      expect(pruneMissingNativeSkillsFromLock).toHaveBeenCalledWith(
+        mockProjectRoot,
+      );
+      expect(pruneMissingAgentSkillsFromLock).toHaveBeenCalledWith(
+        mockProjectRoot,
+      );
       expect(restoreAgentSkillsFromLock).toHaveBeenCalledWith(mockProjectRoot);
       expect(applyAllAgentConfigs).toHaveBeenCalledWith(
         mockProjectRoot,
@@ -569,6 +595,29 @@ describe('CLI Handlers', () => {
       ]);
       expect(getOutdatedAgentSkills).toHaveBeenCalledWith(mockProjectRoot);
       expect(applyAllAgentConfigs).not.toHaveBeenCalled();
+    });
+
+    it('prunes stale lock-backed outputs before update apply', async () => {
+      (pruneMissingNativeSkillsFromLock as jest.Mock).mockResolvedValue({
+        prunedKeys: ['trace'],
+        prunedOutputNames: ['trace'],
+        warnings: [],
+      });
+
+      await updateHandler({
+        'project-root': mockProjectRoot,
+        args: [],
+        verbose: true,
+      });
+
+      expect(fs.rm).toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.agents', 'skills', 'trace'),
+        { force: true, recursive: true },
+      );
+      expect(fs.rm).toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.claude', 'skills', 'trace'),
+        { force: true, recursive: true },
+      );
     });
 
     it('delegates remove/list/find/check wrappers to the pinned local skills CLI', async () => {

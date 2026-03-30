@@ -186,4 +186,46 @@ Second version.
     expect(updateOutput).toContain('Updated 1 agent-derived skill');
     expect(updated).toContain('Second version.');
   });
+
+  it('prunes removed agent-derived sources during update', () => {
+    const projectRoot = createProjectRoot('skiller-agent-prune-');
+    const sourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'skiller-agent-prune-src-'));
+
+    writeFile(
+      path.join(sourceRoot, 'agents', 'scope-guardian-reviewer.md'),
+      `---
+name: scope-guardian-reviewer
+description: Keep scope tight
+---
+
+First version.
+`,
+    );
+
+    runSkiller(
+      `add ${JSON.stringify(sourceRoot)} --skill scope-guardian-reviewer -y`,
+      projectRoot,
+    );
+
+    fs.rmSync(path.join(sourceRoot, 'agents', 'scope-guardian-reviewer.md'));
+
+    const updateOutput = runSkiller('update', projectRoot);
+    expect(updateOutput).toContain(
+      'Pruned 1 stale agent-derived skill(s): scope-guardian-reviewer',
+    );
+    expect(
+      fs.existsSync(path.join(projectRoot, 'skiller-lock.json')),
+    ).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(
+          projectRoot,
+          '.agents',
+          'skills',
+          'scope-guardian-reviewer',
+          'SKILL.md',
+        ),
+      ),
+    ).toBe(false);
+  });
 });

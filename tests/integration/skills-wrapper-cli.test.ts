@@ -25,7 +25,6 @@ describe('Skills wrapper CLI', () => {
       },
     );
 
-    expect(output).toContain('No skills found to remove');
     expect(output).toContain('Apply completed successfully');
     expect(output).not.toContain('Unknown argument: y');
   });
@@ -74,7 +73,6 @@ describe('Skills wrapper CLI', () => {
       fs.readFileSync(path.join(projectRoot, 'skills-lock.json'), 'utf8'),
     );
 
-    expect(output).toContain('No skills found to remove');
     expect(output).toContain('Apply completed successfully');
     expect(lock.skills).toEqual({
       keep: {
@@ -82,5 +80,93 @@ describe('Skills wrapper CLI', () => {
         sourceType: 'github',
       },
     });
+  });
+
+  it('prunes removed upstream skills from skills-lock.json during install', () => {
+    const projectRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'skiller-install-prune-native-'),
+    );
+    const sourceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'skiller-install-prune-native-src-'),
+    );
+
+    fs.writeFileSync(
+      path.join(projectRoot, 'package.json'),
+      JSON.stringify({ name: 'wrapper-test', private: true }, null, 2),
+    );
+    fs.mkdirSync(path.join(projectRoot, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(projectRoot, '.agents'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.agents', 'AGENTS.md'), '');
+    fs.writeFileSync(path.join(projectRoot, '.agents', 'skiller.toml'), '');
+
+    fs.mkdirSync(path.join(sourceRoot, 'skills', 'debug'), { recursive: true });
+    fs.writeFileSync(
+      path.join(sourceRoot, 'skills', 'debug', 'SKILL.md'),
+      `---
+name: debug
+description: Debug things
+---
+
+Use evidence first.
+`,
+    );
+
+    fs.writeFileSync(
+      path.join(projectRoot, 'skills-lock.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          skills: {
+            debug: {
+              source: sourceRoot,
+              sourceType: 'local',
+              computedHash: 'old-debug',
+            },
+            trace: {
+              source: sourceRoot,
+              sourceType: 'local',
+              computedHash: 'old-trace',
+            },
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+
+    fs.mkdirSync(path.join(projectRoot, '.agents', 'skills', 'trace'), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(projectRoot, '.agents', 'skills', 'trace', 'SKILL.md'),
+      'stale trace\n',
+    );
+
+    const output = execSync(
+      `node dist/cli/index.js install --project-root ${JSON.stringify(projectRoot)}`,
+      {
+        encoding: 'utf8',
+        stdio: 'pipe',
+      },
+    );
+
+    const lock = JSON.parse(
+      fs.readFileSync(path.join(projectRoot, 'skills-lock.json'), 'utf8'),
+    );
+
+    expect(output).toContain('Pruned 1 stale upstream skill(s): trace');
+    expect(lock.skills).toEqual({
+      debug: {
+        source: sourceRoot,
+        sourceType: 'local',
+        computedHash: expect.any(String),
+      },
+    });
+    expect(
+      fs.existsSync(path.join(projectRoot, '.agents', 'skills', 'trace')),
+    ).toBe(false);
+    expect(
+      fs.existsSync(path.join(projectRoot, '.agents', 'skills', 'debug', 'SKILL.md')),
+    ).toBe(true);
   });
 });

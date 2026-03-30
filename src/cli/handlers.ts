@@ -36,6 +36,8 @@ import {
   hasListFlag,
   inspectCompatibleSource,
   installAgentSkillsFromInspection,
+  pruneMissingAgentSkillsFromLock,
+  pruneMissingNativeSkillsFromLock,
   removeAgentManagedSkills,
   restoreAgentSkillsFromLock,
   updateAgentSkillsFromLock,
@@ -123,6 +125,59 @@ async function applyAfterSkillsLifecycleStep(
     'project-root': projectRoot,
     verbose,
   });
+}
+
+async function pruneSkillOutputs(
+  projectRoot: string,
+  skillNames: string[],
+): Promise<void> {
+  const normalizedNames = [...new Set(skillNames.filter(Boolean))];
+  if (normalizedNames.length === 0) return;
+
+  const skillDirs = new Set<string>([getCanonicalSkillsDir(projectRoot)]);
+
+  for (const agent of allAgents) {
+    if (!agent.supportsNativeSkills?.() || !agent.getSkillsPath) continue;
+    const skillsPath = agent.getSkillsPath(projectRoot);
+    if (skillsPath) {
+      skillDirs.add(skillsPath);
+    }
+  }
+
+  for (const skillName of normalizedNames) {
+    for (const skillsDir of skillDirs) {
+      await fs.rm(path.join(skillsDir, skillName), {
+        force: true,
+        recursive: true,
+      });
+    }
+  }
+}
+
+async function pruneStaleLockBackedSkills(projectRoot: string): Promise<void> {
+  const [nativePrune, agentPrune] = await Promise.all([
+    pruneMissingNativeSkillsFromLock(projectRoot),
+    pruneMissingAgentSkillsFromLock(projectRoot),
+  ]);
+
+  if (nativePrune.prunedOutputNames.length > 0) {
+    await pruneSkillOutputs(projectRoot, nativePrune.prunedOutputNames);
+    console.log(
+      `[skiller] Pruned ${nativePrune.prunedKeys.length} stale upstream skill(s): ${nativePrune.prunedKeys.join(', ')}`,
+    );
+  }
+
+  if (agentPrune.prunedOutputNames.length > 0) {
+    await pruneSkillOutputs(projectRoot, agentPrune.prunedOutputNames);
+    console.log(
+      `[skiller] Pruned ${agentPrune.prunedKeys.length} stale agent-derived skill(s): ${agentPrune.prunedKeys.join(', ')}`,
+    );
+  }
+
+  const warnings = [...nativePrune.warnings, ...agentPrune.warnings];
+  if (warnings.length > 0) {
+    console.log(warnings.map((warning) => `[skiller] ${warning}`).join('\n'));
+  }
 }
 
 function normalizeRequestedSkillNames(args: string[] | undefined): string[] {
@@ -930,6 +985,7 @@ export async function addHandler(argv: SkillsWrapperArgs): Promise<void> {
 }
 
 export async function installHandler(argv: InstallArgs): Promise<void> {
+  await pruneStaleLockBackedSkills(argv['project-root']);
   await executeSkillsWrapper(argv['project-root'], [
     'experimental_install',
     ...(argv.args ?? []),
@@ -999,6 +1055,7 @@ export async function checkHandler(argv: SkillsWrapperArgs): Promise<void> {
 }
 
 export async function updateHandler(argv: UpdateArgs): Promise<void> {
+  await pruneStaleLockBackedSkills(argv['project-root']);
   await executeSkillsWrapper(argv['project-root'], [
     'update',
     ...(argv.args ?? []),
