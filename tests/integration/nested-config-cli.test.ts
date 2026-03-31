@@ -15,7 +15,7 @@ describe('CLI nested toggle precedence', () => {
   }): Promise<void> {
     const { nestedTomlValue, includeSubmodule = true } = options;
 
-    const rootSkillerDir = path.join(projectRoot, '.claude');
+    const rootSkillerDir = path.join(projectRoot, '.agents');
     await fs.mkdir(rootSkillerDir, { recursive: true });
     await fs.writeFile(
       path.join(rootSkillerDir, 'AGENTS.md'),
@@ -28,13 +28,13 @@ describe('CLI nested toggle precedence', () => {
 
     if (includeSubmodule) {
       const moduleDir = path.join(projectRoot, 'module');
-      await fs.mkdir(path.join(moduleDir, '.claude'), { recursive: true });
+      await fs.mkdir(path.join(moduleDir, '.agents'), { recursive: true });
       await fs.writeFile(
-        path.join(moduleDir, '.claude', 'AGENTS.md'),
+        path.join(moduleDir, '.agents', 'AGENTS.md'),
         '# Module Rules\n\nThese apply inside module.',
       );
       // Create skiller.toml to make it a valid skiller directory
-      await fs.writeFile(path.join(moduleDir, '.claude', 'skiller.toml'), '');
+      await fs.writeFile(path.join(moduleDir, '.agents', 'skiller.toml'), '');
     }
   }
 
@@ -54,7 +54,7 @@ describe('CLI nested toggle precedence', () => {
 
     await expect(
       fs.readFile(path.join(projectRoot, 'module', 'CLAUDE.md'), 'utf8'),
-    ).resolves.toContain('@.claude/AGENTS.md');
+    ).resolves.toContain('@.agents/AGENTS.md');
   });
 
   it('remains flat when config sets nested = false and CLI omits --nested', async () => {
@@ -77,6 +77,6 @@ describe('CLI nested toggle precedence', () => {
 
     await expect(
       fs.readFile(path.join(projectRoot, 'module', 'CLAUDE.md'), 'utf8'),
-    ).resolves.toContain('@.claude/AGENTS.md');
+    ).resolves.toContain('@.agents/AGENTS.md');
   });
 });

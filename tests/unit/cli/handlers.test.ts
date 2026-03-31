@@ -39,6 +39,9 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { loadConfig } from '../../../src/core/ConfigLoader';
+import { syncProjectFiles } from '../../../src/core/SyncEngine';
+import { findAllSkillerDirs } from '../../../src/core/FileSystemUtils';
+import { installPresetIntoProject } from '../../../src/core/PresetInstaller';
 
 // Mock the external dependencies
 jest.mock('../../../src/lib');
@@ -66,6 +69,16 @@ jest.mock('../../../src/core/AgentSourceCompatibility', () => ({
   removeAgentManagedSkills: jest.fn(),
   restoreAgentSkillsFromLock: jest.fn(),
   updateAgentSkillsFromLock: jest.fn(),
+}));
+jest.mock('../../../src/core/SyncEngine', () => ({
+  syncProjectFiles: jest.fn(),
+}));
+jest.mock('../../../src/core/FileSystemUtils', () => ({
+  ...jest.requireActual('../../../src/core/FileSystemUtils'),
+  findAllSkillerDirs: jest.fn(),
+}));
+jest.mock('../../../src/core/PresetInstaller', () => ({
+  installPresetIntoProject: jest.fn(),
 }));
 
 describe('CLI Handlers', () => {
@@ -128,6 +141,22 @@ describe('CLI Handlers', () => {
       updated: [],
       warnings: [],
     });
+    (syncProjectFiles as jest.Mock).mockResolvedValue({
+      applied: false,
+      synced: [],
+      removed: [],
+      removedNativeLockSkills: [],
+      removedAgentLockSkills: [],
+    });
+    (findAllSkillerDirs as jest.Mock).mockResolvedValue([
+      path.join(mockProjectRoot, '.agents'),
+    ]);
+    (installPresetIntoProject as jest.Mock).mockResolvedValue({
+      preset: 'default',
+      presetRoot: '/tmp/preset/default',
+      removed: [],
+      synced: ['.agents/AGENTS.md', '.agents/skiller.toml'],
+    });
     // Mock loadConfig to return default config
     (loadConfig as jest.Mock).mockResolvedValue({
       defaultAgents: undefined,
@@ -135,6 +164,7 @@ describe('CLI Handlers', () => {
       cliAgents: undefined,
       mcp: {},
       gitignore: {},
+      sync: undefined,
       nested: false,
     });
   });
@@ -522,6 +552,7 @@ describe('CLI Handlers', () => {
         verbose: false,
       });
 
+      expect(syncProjectFiles).toHaveBeenCalledWith(mockProjectRoot);
       expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
         'update',
         '--all',
@@ -556,6 +587,7 @@ describe('CLI Handlers', () => {
         verbose: true,
       });
 
+      expect(syncProjectFiles).toHaveBeenCalledWith(mockProjectRoot);
       expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
         'experimental_install',
         '--frozen',
@@ -581,6 +613,60 @@ describe('CLI Handlers', () => {
         undefined,
         undefined,
       );
+    });
+
+    it('materializes a preset before install when source and --preset are provided', async () => {
+      await installHandler({
+        'project-root': mockProjectRoot,
+        source: 'EveryInc/compound-engineering-plugin',
+        preset: 'default',
+        args: ['--frozen'],
+        verbose: false,
+      });
+
+      expect(installPresetIntoProject).toHaveBeenCalledWith(mockProjectRoot, {
+        preset: 'default',
+        source: 'EveryInc/compound-engineering-plugin',
+      });
+      expect(syncProjectFiles).not.toHaveBeenCalled();
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'experimental_install',
+        '--frozen',
+      ]);
+    });
+
+    it('auto-detects preset installation when source looks like a repo', async () => {
+      await installHandler({
+        'project-root': mockProjectRoot,
+        source: 'EveryInc/compound-engineering-plugin',
+        args: [],
+        verbose: false,
+      });
+
+      expect(installPresetIntoProject).toHaveBeenCalledWith(mockProjectRoot, {
+        preset: undefined,
+        source: 'EveryInc/compound-engineering-plugin',
+      });
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'experimental_install',
+      ]);
+    });
+
+    it('keeps a non-preset positional source as passthrough install args', async () => {
+      await installHandler({
+        'project-root': mockProjectRoot,
+        source: 'react',
+        args: ['--frozen'],
+        verbose: false,
+      });
+
+      expect(installPresetIntoProject).not.toHaveBeenCalled();
+      expect(syncProjectFiles).toHaveBeenCalledWith(mockProjectRoot);
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'experimental_install',
+        'react',
+        '--frozen',
+      ]);
     });
 
     it('delegates outdated to the pinned local skills CLI without applying', async () => {
@@ -616,6 +702,119 @@ describe('CLI Handlers', () => {
       );
       expect(fs.rm).toHaveBeenCalledWith(
         path.join(mockProjectRoot, '.claude', 'skills', 'trace'),
+        { force: true, recursive: true },
+      );
+    });
+
+    it('supports --no-sync during install', async () => {
+      await installHandler({
+        'project-root': mockProjectRoot,
+        args: [],
+        'no-sync': true,
+        verbose: false,
+      });
+
+      expect(syncProjectFiles).not.toHaveBeenCalled();
+      expect(runSkillsCli).toHaveBeenCalledWith(mockProjectRoot, [
+        'experimental_install',
+      ]);
+    });
+
+    it('supports --sync-only during update', async () => {
+      (syncProjectFiles as jest.Mock).mockResolvedValue({
+        applied: true,
+        source: '/tmp/preset',
+        mode: 'preset',
+        synced: ['skills-lock.json'],
+        removed: [],
+        removedNativeLockSkills: [],
+        removedAgentLockSkills: [],
+      });
+
+      await updateHandler({
+        'project-root': mockProjectRoot,
+        args: [],
+        'sync-only': true,
+        verbose: false,
+      });
+
+      expect(syncProjectFiles).toHaveBeenCalledWith(mockProjectRoot);
+      expect(runSkillsCli).not.toHaveBeenCalled();
+      expect(applyAllAgentConfigs).not.toHaveBeenCalled();
+    });
+
+    it('supports preset-only materialization with --sync-only during install', async () => {
+      await installHandler({
+        'project-root': mockProjectRoot,
+        source: '../dotai',
+        preset: 'default',
+        args: [],
+        'sync-only': true,
+        verbose: false,
+      });
+
+      expect(installPresetIntoProject).toHaveBeenCalledWith(mockProjectRoot, {
+        preset: 'default',
+        source: '../dotai',
+      });
+      expect(runSkillsCli).not.toHaveBeenCalled();
+      expect(applyAllAgentConfigs).not.toHaveBeenCalled();
+    });
+
+    it('runs install over nested project roots when --nested is set', async () => {
+      (findAllSkillerDirs as jest.Mock).mockResolvedValue([
+        path.join(mockProjectRoot, 'templates', 'a', '.agents'),
+        path.join(mockProjectRoot, '.agents'),
+      ]);
+
+      await installHandler({
+        'project-root': mockProjectRoot,
+        args: [],
+        nested: true,
+        verbose: false,
+      });
+
+      expect(syncProjectFiles).toHaveBeenNthCalledWith(
+        1,
+        mockProjectRoot,
+      );
+      expect(syncProjectFiles).toHaveBeenNthCalledWith(
+        2,
+        path.join(mockProjectRoot, 'templates', 'a'),
+      );
+      expect(runSkillsCli).toHaveBeenNthCalledWith(1, mockProjectRoot, [
+        'experimental_install',
+      ]);
+      expect(runSkillsCli).toHaveBeenNthCalledWith(
+        2,
+        path.join(mockProjectRoot, 'templates', 'a'),
+        ['experimental_install'],
+      );
+    });
+
+    it('prunes skill outputs removed by sync before install continues', async () => {
+      (syncProjectFiles as jest.Mock).mockResolvedValue({
+        applied: true,
+        source: '/tmp/preset',
+        mode: 'preset',
+        synced: ['skills-lock.json'],
+        removed: [],
+        removedNativeLockSkills: ['trace'],
+        removedAgentLockSkills: ['coherence-reviewer'],
+      });
+
+      await installHandler({
+        'project-root': mockProjectRoot,
+        args: [],
+        verbose: false,
+      });
+
+      expect(fs.rm).toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.agents', 'skills', 'trace'),
+        { force: true, recursive: true },
+      );
+      expect(fs.rm).toHaveBeenCalledWith(
+        path.join(mockProjectRoot, '.agents', 'skills', 'coherence-reviewer'),
         { force: true, recursive: true },
       );
     });

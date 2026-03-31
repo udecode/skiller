@@ -123,6 +123,67 @@ describe("ConfigLoader", () => {
 		expect(config.defaultAgents).toEqual(["codex"]);
 	});
 
+	it("parses sync configuration with defaults", async () => {
+		await fs.writeFile(
+			path.join(skillerDir, "skiller.toml"),
+			`[sync]
+source = "../preset"
+`,
+		);
+		const config = await loadConfig({ projectRoot: tmpDir });
+		expect(config.sync).toEqual({
+			source: path.resolve(tmpDir, "../preset"),
+			mode: "auto",
+			clean: true,
+			include: undefined,
+			exclude: undefined,
+		});
+	});
+
+	it("merges base sync skiller.toml with local overrides", async () => {
+		const presetRoot = path.join(tmpDir, "..", "preset-root");
+		await fs.mkdir(path.join(presetRoot, ".agents"), { recursive: true });
+		await fs.writeFile(
+			path.join(presetRoot, ".agents", "skiller.toml"),
+			`default_agents = ["claude-code"]
+
+[skills]
+enabled = false
+
+[rules]
+include = ["base/**"]
+
+[agents.codex]
+enabled = false
+`,
+		);
+		await fs.writeFile(
+			path.join(skillerDir, "skiller.toml"),
+			`default_agents = ["codex"]
+
+[sync]
+source = "../preset-root"
+
+[rules]
+exclude = ["local/**"]
+
+[agents.codex]
+enabled = true
+`,
+		);
+
+		const config = await loadConfig({ projectRoot: tmpDir });
+
+		expect(config.defaultAgents).toEqual(["codex"]);
+		expect(config.skills?.enabled).toBe(false);
+		expect(config.rules).toEqual({
+			include: ["base/**"],
+			exclude: ["local/**"],
+		});
+		expect(config.agentConfigs.codex.enabled).toBe(true);
+		expect(config.sync?.source).toBe(path.resolve(tmpDir, "../preset-root"));
+	});
+
 	it("ignores legacy .claude/skiller.toml when canonical .agents config is absent", async () => {
 		const legacyDir = path.join(tmpDir, ".claude");
 		await fs.mkdir(legacyDir, { recursive: true });

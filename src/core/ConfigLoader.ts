@@ -10,6 +10,8 @@ import {
   BackupConfig,
   SkillsConfig,
   RulesConfig,
+  SyncConfig,
+  SyncMode,
 } from '../types';
 import { createSkillerError } from '../constants';
 import { CANONICAL_SKILLER_DIR, SKILLER_CONFIG_FILE } from './project-paths';
@@ -35,10 +37,21 @@ const agentConfigSchema = z
   })
   .optional();
 
+const syncConfigSchema = z
+  .object({
+    source: z.string(),
+    mode: z.enum(['auto', 'preset', 'repo']).optional(),
+    clean: z.boolean().optional(),
+    include: z.array(z.string()).optional(),
+    exclude: z.array(z.string()).optional(),
+  })
+  .optional();
+
 const skillerConfigSchema = z.object({
   default_agents: z.array(z.string()).optional(),
   root_folder: z.string().optional(),
   agents: z.record(z.string(), agentConfigSchema).optional(),
+  sync: syncConfigSchema,
   mcp: z
     .object({
       enabled: z.boolean().optional(),
@@ -78,7 +91,7 @@ const skillerConfigSchema = z.object({
  * By rebuilding the object structure using Object.keys(), we create clean objects
  * that only contain the actual data without Symbol metadata.
  */
-function stripSymbols(obj: unknown): unknown {
+export function stripSymbols(obj: unknown): unknown {
   if (obj === null || typeof obj !== 'object') {
     return obj;
   }
@@ -90,6 +103,180 @@ function stripSymbols(obj: unknown): unknown {
     result[key] = stripSymbols((obj as Record<string, unknown>)[key]);
   }
   return result;
+}
+
+export function isPlainRecord(
+  value: unknown,
+): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function deepMergeConfig(
+  base: Record<string, unknown>,
+  override: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...base };
+
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined) continue;
+
+    if (Array.isArray(value) || !isPlainRecord(value)) {
+      result[key] = value;
+      continue;
+    }
+
+    const baseValue = result[key];
+    if (isPlainRecord(baseValue)) {
+      result[key] = deepMergeConfig(baseValue, value);
+      continue;
+    }
+
+    result[key] = deepMergeConfig({}, value);
+  }
+
+  return result;
+}
+
+export function withoutSync(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...raw };
+  delete next.sync;
+  return next;
+}
+
+async function resolveConfigFile(
+  projectRoot: string,
+  configPath?: string,
+): Promise<string> {
+  if (configPath) {
+    return path.resolve(configPath);
+  }
+
+  const localConfigFile = path.join(
+    projectRoot,
+    CANONICAL_SKILLER_DIR,
+    SKILLER_CONFIG_FILE,
+  );
+  try {
+    await fs.access(localConfigFile);
+    return localConfigFile;
+  } catch {
+    const xdgConfigDir =
+      process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+    return path.join(xdgConfigDir, 'skiller', 'skiller.toml');
+  }
+}
+
+async function readRawConfigFile(
+  filePath: string,
+  warningLabel?: string,
+): Promise<Record<string, unknown>> {
+  try {
+    const text = await fs.readFile(filePath, 'utf8');
+    const parsed = text.trim() ? parseTOML(text) : {};
+    return stripSymbols(parsed) as Record<string, unknown>;
+  } catch (err) {
+    if (err instanceof Error && (err as ErrnoException).code !== 'ENOENT') {
+      const prefix = warningLabel
+        ? `${warningLabel} at ${filePath}`
+        : `config file at ${filePath}`;
+      console.warn(
+        `[skiller] Warning: could not read ${prefix}: ${err.message}`,
+      );
+    }
+    return {};
+  }
+}
+
+function validateRawConfig(
+  raw: Record<string, unknown>,
+  configFile: string,
+): void {
+  const validationResult = skillerConfigSchema.safeParse(raw);
+  if (!validationResult.success) {
+    throw createSkillerError(
+      'Invalid configuration file format',
+      `File: ${configFile}, Errors: ${validationResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
+    );
+  }
+}
+
+function parseSyncConfig(
+  raw: Record<string, unknown>,
+  projectRoot: string,
+): SyncConfig | undefined {
+  const syncSection = raw.sync;
+  if (!isPlainRecord(syncSection) || typeof syncSection.source !== 'string') {
+    return undefined;
+  }
+
+  const mode =
+    syncSection.mode === 'preset' ||
+    syncSection.mode === 'repo' ||
+    syncSection.mode === 'auto'
+      ? (syncSection.mode as SyncMode)
+      : 'auto';
+
+  return {
+    source: path.resolve(projectRoot, syncSection.source),
+    mode,
+    clean: typeof syncSection.clean === 'boolean' ? syncSection.clean : true,
+    include: Array.isArray(syncSection.include)
+      ? syncSection.include.map((entry) => String(entry))
+      : undefined,
+    exclude: Array.isArray(syncSection.exclude)
+      ? syncSection.exclude.map((entry) => String(entry))
+      : undefined,
+  };
+}
+
+export interface RawConfigLoadResult {
+  raw: Record<string, unknown>;
+  localRaw: Record<string, unknown>;
+  baseRaw: Record<string, unknown>;
+  configFile: string;
+  baseConfigFile?: string;
+  sync?: SyncConfig;
+}
+
+export async function loadRawConfig(
+  options: ConfigOptions,
+): Promise<RawConfigLoadResult> {
+  const configFile = await resolveConfigFile(
+    options.projectRoot,
+    options.configPath,
+  );
+  const localRaw = await readRawConfigFile(configFile);
+  validateRawConfig(localRaw, configFile);
+
+  const sync = parseSyncConfig(localRaw, options.projectRoot);
+  let baseRaw: Record<string, unknown> = {};
+  let baseConfigFile: string | undefined;
+
+  if (sync) {
+    baseConfigFile = path.join(
+      sync.source,
+      CANONICAL_SKILLER_DIR,
+      SKILLER_CONFIG_FILE,
+    );
+    baseRaw = withoutSync(
+      await readRawConfigFile(baseConfigFile, 'base sync config'),
+    );
+    validateRawConfig(baseRaw, baseConfigFile);
+  }
+
+  const raw = deepMergeConfig(baseRaw, localRaw);
+  validateRawConfig(raw, configFile);
+
+  return {
+    raw,
+    localRaw,
+    baseRaw,
+    configFile,
+    baseConfigFile,
+    sync,
+  };
 }
 
 /**
@@ -128,6 +315,8 @@ export interface LoadedConfig {
   skills?: SkillsConfig;
   /** Rules configuration section for filtering markdown files. */
   rules?: RulesConfig;
+  /** Optional preset/repo sync configuration. */
+  sync?: SyncConfig;
   /** Whether to enable nested rule loading from nested .agents directories. */
   nested?: boolean;
   /** Whether the nested option was explicitly provided in the config. */
@@ -152,58 +341,12 @@ export interface ConfigOptions {
 export async function loadConfig(
   options: ConfigOptions,
 ): Promise<LoadedConfig> {
-  const { projectRoot, configPath, cliAgents } = options;
-  let configFile: string;
-
-  if (configPath) {
-    configFile = path.resolve(configPath);
-  } else {
-    const localConfigFile = path.join(
-      projectRoot,
-      CANONICAL_SKILLER_DIR,
-      SKILLER_CONFIG_FILE,
-    );
-    try {
-      await fs.access(localConfigFile);
-      configFile = localConfigFile;
-    } catch {
-      // If local config doesn't exist, try global config
-      const xdgConfigDir =
-        process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-      configFile = path.join(xdgConfigDir, 'skiller', 'skiller.toml');
-    }
-  }
-  let raw: Record<string, unknown> = {};
-  try {
-    const text = await fs.readFile(configFile, 'utf8');
-    const parsed = text.trim() ? parseTOML(text) : {};
-    // Strip Symbol properties added by @iarna/toml (required for Zod v4+)
-    raw = stripSymbols(parsed) as Record<string, unknown>;
-
-    // Validate the configuration with zod
-    const validationResult = skillerConfigSchema.safeParse(raw);
-    if (!validationResult.success) {
-      throw createSkillerError(
-        'Invalid configuration file format',
-        `File: ${configFile}, Errors: ${validationResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
-      );
-    }
-  } catch (err) {
-    if (err instanceof Error && (err as ErrnoException).code !== 'ENOENT') {
-      if (err.message.includes('[skiller]')) {
-        throw err; // Re-throw validation errors
-      }
-      console.warn(
-        `[skiller] Warning: could not read config file at ${configFile}: ${err.message}`,
-      );
-    }
-    raw = {};
-  }
+  const { projectRoot, cliAgents } = options;
+  const { raw, sync } = await loadRawConfig(options);
 
   const defaultAgents = Array.isArray(raw.default_agents)
     ? raw.default_agents.map((a) => String(a))
     : undefined;
-
   const rootFolder =
     typeof raw.root_folder === 'string' ? raw.root_folder : undefined;
 
@@ -342,6 +485,7 @@ export async function loadConfig(
     backup: backupConfig,
     skills: skillsConfig,
     rules: rulesConfig,
+    sync,
     nested,
     nestedDefined,
   };

@@ -45,6 +45,20 @@ function skillsArgsBuilder(y: Argv) {
     });
 }
 
+function installArgsBuilder(y: Argv) {
+  return skillsArgsBuilder(y)
+    .positional('source', {
+      type: 'string',
+      description:
+        'Preset source for one-shot materialization (local path, GitHub repo, or GitHub URL)',
+    })
+    .option('preset', {
+      type: 'string',
+      description:
+        'Preset name to materialize from the source (defaults to auto-selecting a single preset or "default")',
+    });
+}
+
 function migrateClaudePluginsArgsBuilder(y: Argv) {
   return y
     .option('project-root', {
@@ -150,13 +164,13 @@ export async function run(): Promise<void> {
           .option('local-only', {
             type: 'boolean',
             description:
-              'Only search for local .claude directories, ignore global config',
+              'Only search for local .agents directories, ignore global config',
             default: false,
           })
           .option('nested', {
             type: 'boolean',
             description:
-              'Enable nested rule loading from nested .claude directories (default: from config or disabled)',
+              'Enable nested rule loading from nested .agents directories (default: from config or disabled)',
           })
           .option('backup', {
             type: 'boolean',
@@ -216,10 +230,27 @@ export async function run(): Promise<void> {
       checkHandler,
     )
     .command<InstallArgs>(
-      'install [args..]',
-      'Restore lock-backed skills plus skiller-managed agent installs from lockfiles, then skiller apply',
+      'install [source] [args..]',
+      'Materialize a preset when requested, or run inherited sync when configured, then restore lock-backed skills plus skiller-managed agent installs from lockfiles, then skiller apply',
       (y: Argv) =>
-        skillsArgsBuilder(y)
+        installArgsBuilder(y)
+          .option('nested', {
+            type: 'boolean',
+            description:
+              'Run the install lifecycle for every nested .agents project root',
+            default: false,
+          })
+          .option('no-sync', {
+            type: 'boolean',
+            description: 'Skip [sync] processing before install',
+            default: false,
+          })
+          .option('sync-only', {
+            type: 'boolean',
+            description:
+              'Run [sync] processing only, then stop before install/apply',
+            default: false,
+          })
           .option('verbose', {
             type: 'boolean',
             description: 'Enable verbose logging for the follow-up apply step',
@@ -230,9 +261,26 @@ export async function run(): Promise<void> {
     )
     .command<UpdateArgs>(
       'update [args..]',
-      'Update local skills CLI installs plus skiller-managed agent installs, then skiller apply',
+      'Optionally sync inherited preset files, then update local skills CLI installs plus skiller-managed agent installs, then skiller apply',
       (y: Argv) =>
         skillsArgsBuilder(y)
+          .option('nested', {
+            type: 'boolean',
+            description:
+              'Run the update lifecycle for every nested .agents project root',
+            default: false,
+          })
+          .option('no-sync', {
+            type: 'boolean',
+            description: 'Skip [sync] processing before update',
+            default: false,
+          })
+          .option('sync-only', {
+            type: 'boolean',
+            description:
+              'Run [sync] processing only, then stop before update/apply',
+            default: false,
+          })
           .option('verbose', {
             type: 'boolean',
             description: 'Enable verbose logging for the follow-up apply step',

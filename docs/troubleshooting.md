@@ -1,9 +1,9 @@
 # Troubleshooting
 
-## "No .claude directories found" / ".claude directory not found"
+## "No .agents directories found" / ".agents directory not found"
 
 - Run `skiller init` at your project root
-- Ensure `.claude/skiller.toml` exists (Skiller only treats a `.claude/` as active if it has `skiller.toml`)
+- Ensure `.agents/skiller.toml` exists (Skiller only treats a `.agents/` folder as active if it has `skiller.toml`)
 
 ## "Invalid configuration file format"
 
@@ -14,8 +14,8 @@ Common causes:
 
 ## Skills not showing up in other agents
 
-- Ensure skills live under `.claude/skills/<name>/SKILL.md`
-- Run `skiller apply` (skills sync happens during apply)
+- Ensure the canonical skill exists under `.agents/skills/<name>/SKILL.md`
+- Run `skiller apply` (agent-specific skill mirrors are written during apply)
 - Check warnings for missing `SKILL.md` (those folders are skipped)
 
 ## Claude plugins not syncing

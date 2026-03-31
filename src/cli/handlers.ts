@@ -41,7 +41,11 @@ import {
   removeAgentManagedSkills,
   restoreAgentSkillsFromLock,
   updateAgentSkillsFromLock,
+  parseCompatibleSource,
 } from '../core/AgentSourceCompatibility';
+import { syncProjectFiles } from '../core/SyncEngine';
+import { findAllSkillerDirs } from '../core/FileSystemUtils';
+import { installPresetIntoProject } from '../core/PresetInstaller';
 import * as readline from 'readline/promises';
 
 export interface ApplyArgs {
@@ -81,10 +85,18 @@ export interface SkillsWrapperArgs {
 }
 
 export interface InstallArgs extends SkillsWrapperArgs {
+  source?: string;
+  preset?: string;
+  nested?: boolean;
+  'no-sync'?: boolean;
+  'sync-only'?: boolean;
   verbose?: boolean;
 }
 
 export interface UpdateArgs extends SkillsWrapperArgs {
+  nested?: boolean;
+  'no-sync'?: boolean;
+  'sync-only'?: boolean;
   verbose?: boolean;
 }
 
@@ -178,6 +190,77 @@ async function pruneStaleLockBackedSkills(projectRoot: string): Promise<void> {
   if (warnings.length > 0) {
     console.log(warnings.map((warning) => `[skiller] ${warning}`).join('\n'));
   }
+}
+
+function normalizeOutputSkillNames(skillNames: string[]): string[] {
+  return [...new Set(skillNames.map((name) => name.replace(/:/g, '-')))].sort(
+    (a, b) => a.localeCompare(b),
+  );
+}
+
+async function pruneOutputsForRemovedLockEntries(
+  projectRoot: string,
+  args: { native: string[]; agent: string[] },
+): Promise<void> {
+  const nativeOutputNames = normalizeOutputSkillNames(args.native);
+  const agentOutputNames = normalizeOutputSkillNames(args.agent);
+
+  if (nativeOutputNames.length > 0) {
+    await pruneSkillOutputs(projectRoot, nativeOutputNames);
+    console.log(
+      `[skiller] Pruned ${args.native.length} skill output(s) removed by source update: ${args.native.join(', ')}`,
+    );
+  }
+
+  if (agentOutputNames.length > 0) {
+    await pruneSkillOutputs(projectRoot, agentOutputNames);
+    console.log(
+      `[skiller] Pruned ${args.agent.length} agent-derived skill output(s) removed by source update: ${args.agent.join(', ')}`,
+    );
+  }
+}
+
+async function getLifecycleProjectRoots(
+  projectRoot: string,
+  nested?: boolean,
+): Promise<string[]> {
+  if (!nested) {
+    return [projectRoot];
+  }
+
+  const skillerDirs = await findAllSkillerDirs(projectRoot);
+  const roots = [...new Set(skillerDirs.map((dir) => path.dirname(dir)))];
+  return roots.sort((a, b) => a.localeCompare(b));
+}
+
+async function maybeRunSync(
+  projectRoot: string,
+  options: { skipSync?: boolean },
+): Promise<Awaited<ReturnType<typeof syncProjectFiles>>> {
+  if (options.skipSync) {
+    return {
+      applied: false,
+      synced: [],
+      removed: [],
+      removedNativeLockSkills: [],
+      removedAgentLockSkills: [],
+    };
+  }
+
+  const result = await syncProjectFiles(projectRoot);
+  if (!result.applied) return result;
+
+  const modeSuffix = result.mode ? ` (${result.mode})` : '';
+  console.log(
+    `[skiller] Synced ${result.synced.length} file(s) from ${result.source}${modeSuffix}`,
+  );
+  if (result.removed.length > 0) {
+    console.log(
+      `[skiller] Removed ${result.removed.length} stale synced file(s): ${result.removed.join(', ')}`,
+    );
+  }
+
+  return result;
 }
 
 function normalizeRequestedSkillNames(args: string[] | undefined): string[] {
@@ -316,6 +399,50 @@ async function readJsonObject(
   } catch {
     return null;
   }
+}
+
+async function readLockSkillKeys(filePath: string): Promise<string[]> {
+  const raw = await readJsonObject(filePath);
+  const skills = raw?.skills;
+  if (!skills || typeof skills !== 'object') {
+    return [];
+  }
+
+  return Object.keys(skills as Record<string, unknown>).sort((a, b) =>
+    a.localeCompare(b),
+  );
+}
+
+function subtractStringSets(before: string[], after: string[]): string[] {
+  const afterSet = new Set(after);
+  return before.filter((entry) => !afterSet.has(entry));
+}
+
+function shouldUsePresetInstall(argv: InstallArgs): boolean {
+  if (argv.preset) {
+    return true;
+  }
+
+  if (!argv.source) {
+    return false;
+  }
+
+  try {
+    parseCompatibleSource(argv.source);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getInstallPassthroughArgs(argv: InstallArgs): string[] {
+  if (!shouldUsePresetInstall(argv)) {
+    return argv.source
+      ? [argv.source, ...(argv.args ?? [])]
+      : (argv.args ?? []);
+  }
+
+  return argv.args ?? [];
 }
 
 async function cleanupLegacyClaudePluginState(
@@ -985,26 +1112,90 @@ export async function addHandler(argv: SkillsWrapperArgs): Promise<void> {
 }
 
 export async function installHandler(argv: InstallArgs): Promise<void> {
-  await pruneStaleLockBackedSkills(argv['project-root']);
-  await executeSkillsWrapper(argv['project-root'], [
-    'experimental_install',
-    ...(argv.args ?? []),
-  ]);
-  const restored = await restoreAgentSkillsFromLock(argv['project-root']);
-  if (restored.restored.length > 0) {
-    console.log(
-      `[skiller] Restored ${restored.restored.length} agent-derived skill(s): ${restored.restored.join(', ')}`,
+  if (argv['no-sync'] && argv['sync-only']) {
+    throw new Error('[skiller] --no-sync and --sync-only cannot be combined.');
+  }
+
+  const presetInstall = shouldUsePresetInstall(argv);
+  if (presetInstall && !argv.source) {
+    throw new Error(
+      '[skiller] install --preset requires a source: skiller install <source> --preset <name>',
     );
   }
-  if (restored.warnings.length > 0) {
-    console.log(
-      restored.warnings.map((warning) => `[skiller] ${warning}`).join('\n'),
-    );
-  }
-  await applyAfterSkillsLifecycleStep(
+
+  const projectRoots = await getLifecycleProjectRoots(
     argv['project-root'],
-    argv.verbose ?? false,
+    argv.nested,
   );
+  const installArgs = getInstallPassthroughArgs(argv);
+
+  for (const projectRoot of projectRoots) {
+    if (presetInstall) {
+      const [previousNativeLockSkills, previousAgentLockSkills] =
+        await Promise.all([
+          readLockSkillKeys(path.join(projectRoot, 'skills-lock.json')),
+          readLockSkillKeys(path.join(projectRoot, 'skiller-lock.json')),
+        ]);
+      const presetResult = await installPresetIntoProject(projectRoot, {
+        preset: argv.preset,
+        source: argv.source!,
+      });
+      console.log(
+        `[skiller] Materialized preset '${presetResult.preset}' from ${argv.source} (${presetResult.synced.length} file(s))`,
+      );
+      if (presetResult.removed.length > 0) {
+        console.log(
+          `[skiller] Removed ${presetResult.removed.length} stale preset-managed file(s): ${presetResult.removed.join(', ')}`,
+        );
+      }
+
+      const [nextNativeLockSkills, nextAgentLockSkills] = await Promise.all([
+        readLockSkillKeys(path.join(projectRoot, 'skills-lock.json')),
+        readLockSkillKeys(path.join(projectRoot, 'skiller-lock.json')),
+      ]);
+
+      await pruneOutputsForRemovedLockEntries(projectRoot, {
+        native: subtractStringSets(
+          previousNativeLockSkills,
+          nextNativeLockSkills,
+        ),
+        agent: subtractStringSets(previousAgentLockSkills, nextAgentLockSkills),
+      });
+    } else {
+      const syncResult = await maybeRunSync(projectRoot, {
+        skipSync: argv['no-sync'] ?? false,
+      });
+
+      if (syncResult.applied) {
+        await pruneOutputsForRemovedLockEntries(projectRoot, {
+          native: syncResult.removedNativeLockSkills,
+          agent: syncResult.removedAgentLockSkills,
+        });
+      }
+    }
+
+    if (argv['sync-only']) {
+      continue;
+    }
+
+    await pruneStaleLockBackedSkills(projectRoot);
+    await executeSkillsWrapper(projectRoot, [
+      'experimental_install',
+      ...installArgs,
+    ]);
+    const restored = await restoreAgentSkillsFromLock(projectRoot);
+    if (restored.restored.length > 0) {
+      console.log(
+        `[skiller] Restored ${restored.restored.length} agent-derived skill(s): ${restored.restored.join(', ')}`,
+      );
+    }
+    if (restored.warnings.length > 0) {
+      console.log(
+        restored.warnings.map((warning) => `[skiller] ${warning}`).join('\n'),
+      );
+    }
+    await applyAfterSkillsLifecycleStep(projectRoot, argv.verbose ?? false);
+  }
 }
 
 export async function removeHandler(argv: SkillsWrapperArgs): Promise<void> {
@@ -1055,26 +1246,46 @@ export async function checkHandler(argv: SkillsWrapperArgs): Promise<void> {
 }
 
 export async function updateHandler(argv: UpdateArgs): Promise<void> {
-  await pruneStaleLockBackedSkills(argv['project-root']);
-  await executeSkillsWrapper(argv['project-root'], [
-    'update',
-    ...(argv.args ?? []),
-  ]);
-  const updated = await updateAgentSkillsFromLock(argv['project-root']);
-  if (updated.updated.length > 0) {
-    console.log(
-      `[skiller] Updated ${updated.updated.length} agent-derived skill(s): ${updated.updated.join(', ')}`,
-    );
+  if (argv['no-sync'] && argv['sync-only']) {
+    throw new Error('[skiller] --no-sync and --sync-only cannot be combined.');
   }
-  if (updated.warnings.length > 0) {
-    console.log(
-      updated.warnings.map((warning) => `[skiller] ${warning}`).join('\n'),
-    );
-  }
-  await applyAfterSkillsLifecycleStep(
+
+  const projectRoots = await getLifecycleProjectRoots(
     argv['project-root'],
-    argv.verbose ?? false,
+    argv.nested,
   );
+
+  for (const projectRoot of projectRoots) {
+    const syncResult = await maybeRunSync(projectRoot, {
+      skipSync: argv['no-sync'] ?? false,
+    });
+
+    if (syncResult.applied) {
+      await pruneOutputsForRemovedLockEntries(projectRoot, {
+        native: syncResult.removedNativeLockSkills,
+        agent: syncResult.removedAgentLockSkills,
+      });
+    }
+
+    if (argv['sync-only']) {
+      continue;
+    }
+
+    await pruneStaleLockBackedSkills(projectRoot);
+    await executeSkillsWrapper(projectRoot, ['update', ...(argv.args ?? [])]);
+    const updated = await updateAgentSkillsFromLock(projectRoot);
+    if (updated.updated.length > 0) {
+      console.log(
+        `[skiller] Updated ${updated.updated.length} agent-derived skill(s): ${updated.updated.join(', ')}`,
+      );
+    }
+    if (updated.warnings.length > 0) {
+      console.log(
+        updated.warnings.map((warning) => `[skiller] ${warning}`).join('\n'),
+      );
+    }
+    await applyAfterSkillsLifecycleStep(projectRoot, argv.verbose ?? false);
+  }
 }
 
 export async function outdatedHandler(argv: SkillsWrapperArgs): Promise<void> {

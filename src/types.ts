@@ -32,6 +32,23 @@ export interface SkillsConfig {
   enabled?: boolean;
 }
 
+/** Supported sync source modes. */
+export type SyncMode = 'auto' | 'preset' | 'repo';
+
+/** Sync configuration for inheriting preset or repo-managed agent files. */
+export interface SyncConfig {
+  /** Absolute path to the sync source root. */
+  source: string;
+  /** Source interpretation mode. */
+  mode: SyncMode;
+  /** Remove previously synced files that are no longer present. */
+  clean: boolean;
+  /** Include patterns for repo mode. */
+  include?: string[];
+  /** Exclude patterns applied after inclusion. */
+  exclude?: string[];
+}
+
 /** Merge strategy for rules: 'all' merges all files, 'cursor' uses Cursor-style MDC format. */
 export type MergeStrategy = 'all' | 'cursor';
 

@@ -1,11 +1,11 @@
-import { parse as parseTOML } from '@iarna/toml';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as FileSystemUtils from './FileSystemUtils';
 import { matchesPattern, normalizePattern } from './FileSystemUtils';
 import { sha256, stableJson } from './hash';
 import { concatenateRules } from './RuleProcessor';
-import { CANONICAL_SKILLER_DIR, SKILLER_CONFIG_FILE } from './project-paths';
+import { CANONICAL_SKILLER_DIR } from './project-paths';
+import { loadRawConfig } from './ConfigLoader';
 import type {
   ConfigDiagnostic,
   ConfigMeta,
@@ -61,26 +61,15 @@ export async function loadUnifiedConfig(
 
   const diagnostics: ConfigDiagnostic[] = [];
 
-  // Read TOML if available
+  // Read merged TOML if available, including optional sync base inheritance.
   let tomlRaw: unknown = {};
-  const tomlFile = options.configPath
-    ? path.resolve(options.configPath)
-    : path.join(meta.skillerDir, SKILLER_CONFIG_FILE);
-  try {
-    const text = await fs.readFile(tomlFile, 'utf8');
-    tomlRaw = text.trim() ? parseTOML(text) : {};
-    meta.configFile = tomlFile;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      diagnostics.push({
-        severity: 'warning',
-        code: 'TOML_READ_ERROR',
-        message: 'Failed to read skiller.toml',
-        file: tomlFile,
-        detail: (err as Error).message,
-      });
-    }
-  }
+  const rawConfig = await loadRawConfig({
+    projectRoot: options.projectRoot,
+    configPath: options.configPath,
+  });
+  const tomlFile = rawConfig.configFile;
+  tomlRaw = rawConfig.raw;
+  meta.configFile = tomlFile;
 
   let defaultAgents: string[] | undefined;
   if (

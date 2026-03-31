@@ -29,7 +29,7 @@ const SKIP_DIRS = new Set([
   'tmp-fixtures',
 ]);
 
-interface ParsedSource {
+export interface ParsedSource {
   ref?: string;
   source: string;
   subpath?: string;
@@ -37,7 +37,7 @@ interface ParsedSource {
   url: string;
 }
 
-interface SourceWorkspace {
+export interface SourceWorkspace {
   cleanup: () => Promise<void>;
   parsed: ParsedSource;
   rootPath: string;
@@ -306,6 +306,12 @@ async function withSourceWorkspace(
 ): Promise<SourceWorkspace> {
   const parsed = parseCompatibleSource(rawSource);
   return withParsedSourceWorkspace(parsed);
+}
+
+export async function createSourceWorkspace(
+  rawSource: string,
+): Promise<SourceWorkspace> {
+  return withSourceWorkspace(rawSource);
 }
 
 async function withParsedSourceWorkspace(
