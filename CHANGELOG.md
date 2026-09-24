@@ -1,5 +1,18 @@
 # skiller
 
+## 0.10.0
+
+### Minor Changes
+
+- [#22](https://github.com/udecode/skiller/pull/22) [`6f34849`](https://github.com/udecode/skiller/commit/6f3484900d51afb8d97dbc1d03e83f6e00b564e1) Thanks [@zbeyens](https://github.com/zbeyens)! - Use an authored root `AGENTS.md` as the shared instruction source. Stop generating `AGENTS.md` and `CLAUDE.md`, and keep Skiller configuration in `.agents/skiller.toml`.
+
+- [`751c83f`](https://github.com/udecode/skiller/commit/751c83ff6bc242b61f5181dcc05137a11b987f0c) Thanks [@zbeyens](https://github.com/zbeyens)! - Multi-agent skills propagation
+
+### Patch Changes
+
+- [`b06bc99`](https://github.com/udecode/skiller/commit/b06bc994ebd46ab7b8b2eeecb92d0213f2d49f10) - - Compile wrapper `SKILL.md` files when propagating skills to non-Claude agents.
+  - Do not copy `.mdc` skill source files to agent skill directories.
+
 ## 0.9.2
 
 ### Patch Changes
