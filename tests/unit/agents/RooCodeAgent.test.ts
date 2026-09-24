@@ -13,7 +13,7 @@ describe('RooCodeAgent Unit Tests', () => {
     });
 
     it('returns correct name', () => {
-      expect(agent.getName()).toBe('RooCode');
+      expect(agent.getName()).toBe('Roo Code');
     });
 
     it('returns correct default output paths', () => {
@@ -42,7 +42,9 @@ describe('RooCodeAgent Unit Tests', () => {
     it('should return .roo/skills path', () => {
       const agent = new RooCodeAgent();
       const projectRoot = '/test/project';
-      expect(agent.getSkillsPath?.(projectRoot)).toBe('/test/project/.roo/skills');
+      expect(agent.getSkillsPath?.(projectRoot)).toBe(
+        '/test/project/.roo/skills',
+      );
     });
   });
 });

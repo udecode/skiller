@@ -20,7 +20,7 @@ describe('Copy Skill Folders from Rules to Skills', () => {
     );
 
     // Create .claude directory structure
-    const skillerDir = path.join(projectRoot, '.claude');
+    const skillerDir = path.join(projectRoot, '.agents');
     const rulesDir = path.join(skillerDir, 'rules');
     const skillFolder = path.join(rulesDir, 'my-skill');
     await fs.mkdir(skillFolder, { recursive: true });
@@ -66,7 +66,7 @@ Use this skill for testing.
     );
 
     // Create .claude directory structure with nested skill folders
-    const skillerDir = path.join(projectRoot, '.claude');
+    const skillerDir = path.join(projectRoot, '.agents');
     const rulesDir = path.join(skillerDir, 'rules');
 
     // Create nested structure: rules/category/nested-skill/SKILL.md
@@ -101,7 +101,7 @@ description: A nested skill
     );
 
     // Create .claude directory with empty rules
-    const skillerDir = path.join(projectRoot, '.claude');
+    const skillerDir = path.join(projectRoot, '.agents');
     const rulesDir = path.join(skillerDir, 'rules');
     await fs.mkdir(rulesDir, { recursive: true });
 
@@ -132,7 +132,7 @@ description: A nested skill
     );
 
     // Create .claude directory structure
-    const skillerDir = path.join(projectRoot, '.claude');
+    const skillerDir = path.join(projectRoot, '.agents');
     const rulesDir = path.join(skillerDir, 'rules');
     const skillFolder = path.join(rulesDir, 'dry-run-skill');
     await fs.mkdir(skillFolder, { recursive: true });
@@ -161,7 +161,7 @@ description: Test dry run
     );
 
     // Create .claude directory with multiple skill folders
-    const skillerDir = path.join(projectRoot, '.claude');
+    const skillerDir = path.join(projectRoot, '.agents');
     const rulesDir = path.join(skillerDir, 'rules');
 
     // Create first skill
@@ -196,7 +196,7 @@ description: Test dry run
     );
 
     // Create .claude directory structure
-    const skillerDir = path.join(projectRoot, '.claude');
+    const skillerDir = path.join(projectRoot, '.agents');
     const rulesDir = path.join(skillerDir, 'rules');
     const skillFolder = path.join(rulesDir, 'complex-skill');
     await fs.mkdir(skillFolder, { recursive: true });
@@ -210,10 +210,7 @@ description: Test dry run
     // Create subdirectory with files
     const subDir = path.join(skillFolder, 'templates');
     await fs.mkdir(subDir, { recursive: true });
-    await fs.writeFile(
-      path.join(subDir, 'template.txt'),
-      'Template content',
-    );
+    await fs.writeFile(path.join(subDir, 'template.txt'), 'Template content');
 
     // Copy skill folders
     await copySkillFoldersFromRules(skillerDir, false, false);
@@ -239,7 +236,7 @@ description: Test dry run
     );
 
     // Create .claude directory without rules
-    const skillerDir = path.join(projectRoot, '.claude');
+    const skillerDir = path.join(projectRoot, '.agents');
     await fs.mkdir(skillerDir, { recursive: true });
 
     // Should not throw

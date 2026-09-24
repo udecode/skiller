@@ -21,7 +21,7 @@ describe('QwenCodeAgent', () => {
 
   it('writes AGENTS.md and sets contextFileName in .qwen/settings.json', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Rule A',
+      'AGENTS.md': 'Rule A',
     });
     try {
       const agent = new QwenCodeAgent();
@@ -47,7 +47,7 @@ describe('QwenCodeAgent', () => {
 
   it('preserves existing settings and adds/updates contextFileName', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Rule X',
+      'AGENTS.md': 'Rule X',
       '.qwen/settings.json': JSON.stringify({
         someSetting: true,
         mcpServers: { existing: { url: 'http://example' } },

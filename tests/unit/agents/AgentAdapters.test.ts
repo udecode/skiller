@@ -51,7 +51,7 @@ describe('Agent Adapters', () => {
       const target = path.join(tmpDir, 'CLAUDE.md');
       await fs.writeFile(target, 'old claude');
       const ruleFiles = [
-        { path: path.join(tmpDir, '.claude/AGENTS.md'), content: 'new claude' },
+        { path: path.join(tmpDir, 'AGENTS.md'), content: 'new claude' },
       ];
       await agent.applySkillerConfig(
         'new claude',
@@ -70,9 +70,7 @@ describe('Agent Adapters', () => {
     const agent = new ClaudeAgent();
     const custom = path.join(tmpDir, 'CUSTOM_CLAUDE.md');
     await fs.mkdir(path.dirname(custom), { recursive: true });
-    const ruleFiles = [
-      { path: path.join(tmpDir, '.claude/AGENTS.md'), content: 'x' },
-    ];
+    const ruleFiles = [{ path: path.join(tmpDir, 'AGENTS.md'), content: 'x' }];
     await agent.applySkillerConfig(
       'x',
       tmpDir,

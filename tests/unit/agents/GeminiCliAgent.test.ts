@@ -45,7 +45,7 @@ describe('GeminiCliAgent', () => {
 
   it('preserves existing settings and adds/updates contextFileName', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Rule X',
+      'AGENTS.md': 'Rule X',
       '.gemini/settings.json': JSON.stringify({
         someSetting: true,
         mcpServers: { existing: { url: 'http://example' } },

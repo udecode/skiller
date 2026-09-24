@@ -36,8 +36,8 @@ describe('Test Harness', () => {
 
     it('creates files when provided', async () => {
       const files = {
-        '.claude/AGENTS.md': '# Test Instructions',
-        '.claude/skiller.toml': 'default_agents = ["github-copilot"]',
+        'AGENTS.md': '# Test Instructions',
+        '.agents/skiller.toml': 'default_agents = ["github-copilot"]',
         'README.md': '# Test Project',
       };
 
@@ -115,8 +115,8 @@ describe('Test Harness', () => {
     beforeEach(async () => {
       // Create a basic test project with skiller configuration
       testProject = await setupTestProject({
-        '.claude/AGENTS.md': '# Test Rule',
-        '.claude/skiller.toml': 'default_agents = ["github-copilot"]',
+        'AGENTS.md': '# Test Rule',
+        '.agents/skiller.toml': 'default_agents = ["github-copilot"]',
       });
     });
 

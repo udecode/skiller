@@ -45,11 +45,11 @@ export async function revertAllAgentConfigs(
   );
   if (!skillerDir) {
     throw createSkillerError(
-      `.claude directory not found`,
+      `.agents directory not found`,
       `Searched from: ${projectRoot}`,
     );
   }
-  logVerbose(`Found .claude directory at: ${skillerDir}`, verbose);
+  logVerbose(`Found .agents directory at: ${skillerDir}`, verbose);
 
   // Normalize per-agent config keys to agent identifiers
   config.agentConfigs = mapRawAgentConfigs(config.agentConfigs, agents);

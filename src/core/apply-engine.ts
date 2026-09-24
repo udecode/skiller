@@ -36,7 +36,7 @@ export interface SkillerConfiguration {
 }
 
 /**
- * Configuration data for a specific .claude directory in hierarchical mode
+ * Configuration data for a specific .agents directory in hierarchical mode.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface HierarchicalSkillerConfiguration extends SkillerConfiguration {
@@ -44,11 +44,11 @@ export interface HierarchicalSkillerConfiguration extends SkillerConfiguration {
 }
 
 export /**
- * Loads configurations for all .claude directories in hierarchical mode.
- * Each .claude directory gets its own independent configuration with separate rules.
+ * Loads configurations for all .agents directories in hierarchical mode.
+ * Each .agents directory gets its own independent configuration with separate rules.
  * @param projectRoot Root directory of the project
  * @param configPath Optional custom config path
- * @param localOnly Whether to search only locally for .claude directories
+ * @param localOnly Whether to search only locally for .agents directories
  * @returns Promise resolving to array of hierarchical configurations
  */
 async function loadNestedConfigurations(
@@ -86,7 +86,7 @@ async function loadNestedConfigurations(
 
 /**
  * Processes each .claude directory independently, returning configuration for each.
- * Each .claude directory gets its own rules (not merged with others).
+ * Each .agents directory gets its own rules (not merged with others).
  */
 async function processIndependentSkillerDirs(
   skillerDirs: string[],
@@ -105,7 +105,7 @@ async function processIndependentSkillerDirs(
     config: LoadedConfig;
   }> = [];
 
-  // Process each .claude directory independently
+  // Process each .agents directory independently.
   for (const skillerDir of skillerDirs) {
     // Load config first to get rules filtering options
     const config = await loadConfigForSkillerDir(
@@ -247,7 +247,7 @@ async function findSkillerDirectories(
 
     if (allDirs.length === 0) {
       throw createSkillerError(
-        `.claude directory not found`,
+        `.agents directory not found`,
         `Searched from: ${projectRoot}`,
       );
     }
@@ -256,7 +256,7 @@ async function findSkillerDirectories(
     const dir = await FileSystemUtils.findSkillerDir(projectRoot, !localOnly);
     if (!dir) {
       throw createSkillerError(
-        `.claude directory not found`,
+        `.agents directory not found`,
         `Searched from: ${projectRoot}`,
       );
     }
@@ -272,7 +272,7 @@ async function warnAboutLegacyMcpJson(skillerDir: string): Promise<void> {
     const legacyMcpPath = path.join(skillerDir, 'mcp.json');
     await fs.access(legacyMcpPath);
     logWarn(
-      'Warning: Using legacy .claude/mcp.json. Please migrate to skiller.toml. This fallback will be removed in a future release.',
+      'Warning: Using legacy .agents/mcp.json. Please migrate to skiller.toml. This fallback will be removed in a future release.',
     );
   } catch {
     // ignore
@@ -283,11 +283,11 @@ async function warnAboutLegacyMcpJson(skillerDir: string): Promise<void> {
  * Loads configuration for single-directory mode (existing behavior).
  */
 export /**
- * Loads configuration for a single .claude directory.
+ * Loads configuration for a single .agents directory.
  * All rules from the directory are concatenated into a single configuration.
  * @param projectRoot Root directory of the project
  * @param configPath Optional custom config path
- * @param localOnly Whether to search only locally for .claude directory
+ * @param localOnly Whether to search only locally for .agents directory
  * @returns Promise resolving to the loaded configuration
  */
 async function loadSingleConfiguration(
@@ -343,10 +343,10 @@ async function loadSingleConfiguration(
 }
 
 /**
- * Processes hierarchical configurations by applying rules to each .claude directory independently.
+ * Processes hierarchical configurations by applying rules to each .agents directory independently.
  * Each directory gets its own set of rules and generates its own agent files.
  * @param agents Array of agents to process
- * @param configurations Array of hierarchical configurations for each .claude directory
+ * @param configurations Array of hierarchical configurations for each .agents directory
  * @param verbose Whether to enable verbose logging
  * @param dryRun Whether to perform a dry run
  * @param cliMcpEnabled Whether MCP is enabled via CLI
@@ -367,7 +367,7 @@ export async function processHierarchicalConfigurations(
 
   for (const config of configurations) {
     logVerboseInfo(
-      `Processing .claude directory: ${config.skillerDir}`,
+      `Processing .agents directory: ${config.skillerDir}`,
       verbose,
       dryRun,
     );
@@ -497,7 +497,7 @@ export async function applyConfigurationsToAgents(
       }
     } else {
       let finalAgentConfig = agentConfig;
-      if (agent.getIdentifier() === 'augmentcode' && skillerMcpJson) {
+      if (agent.getIdentifier() === 'augment' && skillerMcpJson) {
         const resolvedStrategy =
           cliMcpStrategy ??
           agentConfig?.mcp?.strategy ??
@@ -524,12 +524,12 @@ export async function applyConfigurationsToAgents(
         config.rules?.merge_strategy,
       );
 
-      // Add .cursor/rules to gitignore when copying from .claude
+      // Add .cursor/rules to gitignore when copying canonical rules.
       if (
         agent.getIdentifier() === 'cursor' &&
         config.rules?.merge_strategy === 'cursor' &&
         skillerDir &&
-        path.basename(skillerDir) === '.claude'
+        path.basename(skillerDir) === '.agents'
       ) {
         const cursorRulesPath = path.join(projectRoot, '.cursor', 'rules');
         generatedPaths.push(cursorRulesPath);

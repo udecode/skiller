@@ -30,10 +30,10 @@ export class CursorAgent extends AgentsMdAgent {
     mergeStrategy?: 'all' | 'cursor',
   ): Promise<void> {
     void _backup;
-    // Copy .claude/rules to .cursor/rules when using cursor merge strategy
+    // Copy canonical rules to .cursor/rules when using cursor merge strategy.
     if (mergeStrategy === 'cursor' && skillerDir) {
       const skillerDirName = path.basename(skillerDir);
-      if (skillerDirName === '.claude') {
+      if (skillerDirName === '.agents') {
         const sourceRulesDir = path.join(skillerDir, 'rules');
         const targetRulesDir = path.join(projectRoot, '.cursor', 'rules');
 

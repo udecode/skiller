@@ -1,17 +1,17 @@
-import * as fs from "fs/promises";
-import * as path from "path";
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import {
-	setupTestProject,
-	teardownTestProject,
-	runSkillerWithInheritedStdio,
-} from "./harness";
+  setupTestProject,
+  teardownTestProject,
+  runSkillerWithInheritedStdio,
+} from './harness';
 
-describe("claude-http-type", () => {
-	let testProject: { projectRoot: string };
+describe('claude-http-type', () => {
+  let testProject: { projectRoot: string };
 
-	beforeEach(async () => {
-		// Create a test project with MCP servers in TOML format
-		const skillerToml = `
+  beforeEach(async () => {
+    // Create a test project with MCP servers in TOML format
+    const skillerToml = `
 [mcp_servers.grep]
 url = "https://mcp.grep.app"
 
@@ -20,95 +20,95 @@ command = "npx"
 args = ["mcp-fs", "/tmp"]
 `;
 
-		testProject = await setupTestProject({
-			".claude/skiller.toml": skillerToml,
-		});
-	});
+    testProject = await setupTestProject({
+      '.agents/skiller.toml': skillerToml,
+    });
+  });
 
-	afterEach(async () => {
-		await teardownTestProject(testProject.projectRoot);
-	});
+  afterEach(async () => {
+    await teardownTestProject(testProject.projectRoot);
+  });
 
-	it('should output type "http" for URL-based servers in Claude config', async () => {
-		const { projectRoot } = testProject;
+  it('should output type "http" for URL-based servers in Claude config', async () => {
+    const { projectRoot } = testProject;
 
-		runSkillerWithInheritedStdio("apply --agents claude", projectRoot);
+    runSkillerWithInheritedStdio('apply --agents claude-code', projectRoot);
 
-		// Verify Claude MCP config uses 'http' type for URL-based servers
-		const claudeResultText = await fs.readFile(
-			path.join(projectRoot, ".mcp.json"),
-			"utf8",
-		);
-		const claudeResult = JSON.parse(claudeResultText);
+    // Verify Claude MCP config uses 'http' type for URL-based servers
+    const claudeResultText = await fs.readFile(
+      path.join(projectRoot, '.mcp.json'),
+      'utf8',
+    );
+    const claudeResult = JSON.parse(claudeResultText);
 
-		// Should have 'mcpServers' key
-		expect(claudeResult.mcpServers).toBeDefined();
+    // Should have 'mcpServers' key
+    expect(claudeResult.mcpServers).toBeDefined();
 
-		// URL-based server should have type 'http', not 'remote'
-		expect(claudeResult.mcpServers.grep).toBeDefined();
-		expect(claudeResult.mcpServers.grep.type).toBe("http");
-		expect(claudeResult.mcpServers.grep.url).toBe("https://mcp.grep.app");
+    // URL-based server should have type 'http', not 'remote'
+    expect(claudeResult.mcpServers.grep).toBeDefined();
+    expect(claudeResult.mcpServers.grep.type).toBe('http');
+    expect(claudeResult.mcpServers.grep.url).toBe('https://mcp.grep.app');
 
-		// Command-based server should still have type 'stdio'
-		expect(claudeResult.mcpServers.local_server).toBeDefined();
-		expect(claudeResult.mcpServers.local_server.type).toBe("stdio");
-	});
+    // Command-based server should still have type 'stdio'
+    expect(claudeResult.mcpServers.local_server).toBeDefined();
+    expect(claudeResult.mcpServers.local_server.type).toBe('stdio');
+  });
 
-	it('should output type "sse" for SSE-based servers in Claude config', async () => {
-		const { projectRoot } = testProject;
+  it('should output type "sse" for SSE-based servers in Claude config', async () => {
+    const { projectRoot } = testProject;
 
-		// Create a TOML with SSE server
-		const skillerTomlWithSse = `
+    // Create a TOML with SSE server
+    const skillerTomlWithSse = `
 [mcp_servers.linear]
 url = "https://mcp.linear.app/sse"
 `;
 
-		await fs.writeFile(
-			path.join(projectRoot, ".claude/skiller.toml"),
-			skillerTomlWithSse,
-		);
+    await fs.writeFile(
+      path.join(projectRoot, '.agents/skiller.toml'),
+      skillerTomlWithSse,
+    );
 
-		runSkillerWithInheritedStdio("apply --agents claude", projectRoot);
+    runSkillerWithInheritedStdio('apply --agents claude-code', projectRoot);
 
-		// Verify Claude MCP config uses 'sse' type for SSE-based servers
-		const claudeResultText = await fs.readFile(
-			path.join(projectRoot, ".mcp.json"),
-			"utf8",
-		);
-		const claudeResult = JSON.parse(claudeResultText);
+    // Verify Claude MCP config uses 'sse' type for SSE-based servers
+    const claudeResultText = await fs.readFile(
+      path.join(projectRoot, '.mcp.json'),
+      'utf8',
+    );
+    const claudeResult = JSON.parse(claudeResultText);
 
-		// SSE server should have type 'sse'
-		expect(claudeResult.mcpServers.linear).toBeDefined();
-		expect(claudeResult.mcpServers.linear.type).toBe("sse");
-		expect(claudeResult.mcpServers.linear.url).toBe(
-			"https://mcp.linear.app/sse",
-		);
-	});
+    // SSE server should have type 'sse'
+    expect(claudeResult.mcpServers.linear).toBeDefined();
+    expect(claudeResult.mcpServers.linear.type).toBe('sse');
+    expect(claudeResult.mcpServers.linear.url).toBe(
+      'https://mcp.linear.app/sse',
+    );
+  });
 
-	it("should maintain correct structure and transformations when running for all agents", async () => {
-		const { projectRoot } = testProject;
+  it('should maintain correct structure and transformations when running for all agents', async () => {
+    const { projectRoot } = testProject;
 
-		// Run for ALL agents (not just Claude)
-		runSkillerWithInheritedStdio("apply", projectRoot);
+    // Run for ALL agents (not just Claude)
+    runSkillerWithInheritedStdio('apply', projectRoot);
 
-		// Verify Claude MCP config has correct structure and transformations
-		const claudeResultText = await fs.readFile(
-			path.join(projectRoot, ".mcp.json"),
-			"utf8",
-		);
-		const claudeResult = JSON.parse(claudeResultText);
+    // Verify Claude MCP config has correct structure and transformations
+    const claudeResultText = await fs.readFile(
+      path.join(projectRoot, '.mcp.json'),
+      'utf8',
+    );
+    const claudeResult = JSON.parse(claudeResultText);
 
-		// Should have 'mcpServers' key, not empty string ""
-		expect(claudeResult.mcpServers).toBeDefined();
-		expect(claudeResult[""]).toBeUndefined();
+    // Should have 'mcpServers' key, not empty string ""
+    expect(claudeResult.mcpServers).toBeDefined();
+    expect(claudeResult['']).toBeUndefined();
 
-		// URL-based server should have transformed type 'http', not 'remote'
-		expect(claudeResult.mcpServers.grep).toBeDefined();
-		expect(claudeResult.mcpServers.grep.type).toBe("http");
-		expect(claudeResult.mcpServers.grep.url).toBe("https://mcp.grep.app");
+    // URL-based server should have transformed type 'http', not 'remote'
+    expect(claudeResult.mcpServers.grep).toBeDefined();
+    expect(claudeResult.mcpServers.grep.type).toBe('http');
+    expect(claudeResult.mcpServers.grep.url).toBe('https://mcp.grep.app');
 
-		// Command-based server should still have type 'stdio'
-		expect(claudeResult.mcpServers.local_server).toBeDefined();
-		expect(claudeResult.mcpServers.local_server.type).toBe("stdio");
-	});
+    // Command-based server should still have type 'stdio'
+    expect(claudeResult.mcpServers.local_server).toBeDefined();
+    expect(claudeResult.mcpServers.local_server.type).toBe('stdio');
+  });
 });

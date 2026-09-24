@@ -49,7 +49,7 @@ jest.mock('../../src/core/FileSystemUtils', () => ({
   findSkillerDir: jest.fn().mockResolvedValue('/test/.claude'),
   readMarkdownFiles: jest.fn().mockResolvedValue([
     {
-      path: '/test/.claude/AGENTS.md',
+      path: '/test/AGENTS.md',
       content: '# Test Instructions',
     },
   ]),

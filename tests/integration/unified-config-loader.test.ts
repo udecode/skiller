@@ -38,22 +38,27 @@ output_path = "AGENTS.md"
   });
 
   test('prefers canonical .agents inputs over legacy .claude inputs', async () => {
-    await fs.mkdir(path.join(projectRoot, '.claude'), { recursive: true });
-    await fs.writeFile(
-      path.join(projectRoot, '.claude', 'skiller.toml'),
-      'default_agents=["claude-code"]\n',
-      'utf8',
-    );
-    await fs.writeFile(
-      path.join(projectRoot, '.claude', 'AGENTS.md'),
-      '# Legacy Rules\nLegacy Line\n',
-      'utf8',
-    );
+    const legacyDir = path.join(projectRoot, '.claude');
+    await fs.mkdir(legacyDir, { recursive: true });
+    try {
+      await fs.writeFile(
+        path.join(legacyDir, 'skiller.toml'),
+        'default_agents=["claude-code"]\n',
+        'utf8',
+      );
+      await fs.writeFile(
+        path.join(legacyDir, 'AGENTS.md'),
+        '# Legacy Rules\nLegacy Line\n',
+        'utf8',
+      );
 
-    const unified = await loadUnifiedConfig({ projectRoot });
-    expect(unified.toml.defaultAgents).toEqual(['github-copilot']);
-    expect(unified.rules.concatenated).toContain('Primary Rules');
-    expect(unified.rules.concatenated).not.toContain('Legacy Rules');
+      const unified = await loadUnifiedConfig({ projectRoot });
+      expect(unified.toml.defaultAgents).toEqual(['github-copilot']);
+      expect(unified.rules.concatenated).toContain('Primary Rules');
+      expect(unified.rules.concatenated).not.toContain('Legacy Rules');
+    } finally {
+      await fs.rm(legacyDir, { recursive: true, force: true });
+    }
   });
 });
 

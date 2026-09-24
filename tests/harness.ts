@@ -12,12 +12,14 @@ export interface TestProject {
  * @param files Optional object where keys are relative file paths and values are file contents
  * @returns Object containing the projectRoot path
  */
-export async function setupTestProject(files?: Record<string, string>): Promise<TestProject> {
+export async function setupTestProject(
+  files?: Record<string, string>,
+): Promise<TestProject> {
   // Create unique temporary directory
   const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'skiller-test-'));
 
-  // Track .claude directories created so we can ensure skiller.toml exists
-  const claudeDirs = new Set<string>();
+  // Track canonical source directories so we can ensure skiller.toml exists.
+  const agentsDirs = new Set<string>();
 
   // Create files if provided
   if (files) {
@@ -28,12 +30,12 @@ export async function setupTestProject(files?: Record<string, string>): Promise<
       const parentDir = path.dirname(fullPath);
       await fs.mkdir(parentDir, { recursive: true });
 
-      // Track if we created a .claude directory
+      // Track if we created a .agents directory.
       const pathParts = relativePath.split('/');
-      const claudeIndex = pathParts.indexOf('.claude');
-      if (claudeIndex !== -1) {
-        const claudeRelPath = pathParts.slice(0, claudeIndex + 1).join('/');
-        claudeDirs.add(path.join(projectRoot, claudeRelPath));
+      const agentsIndex = pathParts.indexOf('.agents');
+      if (agentsIndex !== -1) {
+        const agentsRelPath = pathParts.slice(0, agentsIndex + 1).join('/');
+        agentsDirs.add(path.join(projectRoot, agentsRelPath));
       }
 
       // Write file content
@@ -41,9 +43,9 @@ export async function setupTestProject(files?: Record<string, string>): Promise<
     }
   }
 
-  // Ensure skiller.toml exists in each .claude directory
-  for (const claudeDir of claudeDirs) {
-    const tomlPath = path.join(claudeDir, 'skiller.toml');
+  // Ensure skiller.toml exists in each canonical source directory.
+  for (const agentsDir of agentsDirs) {
+    const tomlPath = path.join(agentsDir, 'skiller.toml');
     try {
       await fs.access(tomlPath);
     } catch {
@@ -71,9 +73,9 @@ export async function teardownTestProject(projectRoot: string): Promise<void> {
  */
 export function runSkiller(command: string, projectRoot: string): string {
   const fullCommand = `node dist/cli/index.js ${command} --project-root ${projectRoot}`;
-  return execSync(fullCommand, { 
+  return execSync(fullCommand, {
     stdio: 'pipe',
-    encoding: 'utf8'
+    encoding: 'utf8',
   });
 }
 
@@ -84,7 +86,10 @@ export function runSkillerAll(command: string, projectRoot: string): string {
   // NOTE: execSync only returns stdout. console.warn writes to stderr.
   // We redirect stderr (2) to stdout (1) so legacy warnings emitted via console.warn are captured.
   const fullCommand = `node dist/cli/index.js ${command} --project-root ${projectRoot} 2>&1`;
-  return execSync(fullCommand, { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8' });
+  return execSync(fullCommand, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    encoding: 'utf8',
+  });
 }
 
 /**
@@ -92,7 +97,10 @@ export function runSkillerAll(command: string, projectRoot: string): string {
  * @param command Command string (e.g., 'apply --agents copilot')
  * @param projectRoot Path to the test project directory
  */
-export function runSkillerWithInheritedStdio(command: string, projectRoot: string): void {
+export function runSkillerWithInheritedStdio(
+  command: string,
+  projectRoot: string,
+): void {
   const fullCommand = `node dist/cli/index.js ${command} --project-root ${projectRoot}`;
   execSync(fullCommand, { stdio: 'inherit' });
 }

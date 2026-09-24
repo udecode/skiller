@@ -40,7 +40,15 @@ export class CodexCliAgent implements IAgent {
     projectRoot: string,
     skillerMcpJson: SkillerMcp | null,
     agentConfig?: IAgentConfig,
+    _backup?: boolean,
+    _ruleFiles?: { path: string; content: string }[],
+    _skillerDir?: string,
+    _mergeStrategy?: 'all' | 'cursor',
   ): Promise<void> {
+    void _backup;
+    void _ruleFiles;
+    void _skillerDir;
+    void _mergeStrategy;
     // Use proper path resolution from getDefaultOutputPath and agentConfig
     const defaults = this.getDefaultOutputPath(projectRoot);
     const mcpEnabled = agentConfig?.mcp?.enabled ?? true;

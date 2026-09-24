@@ -480,11 +480,11 @@ export async function revertAgentConfiguration(
   const mcpPath = await getNativeMcpPath(agent.getName(), projectRoot);
   if (mcpPath && mcpPath.startsWith(projectRoot)) {
     if (
-      agent.getName() === 'AugmentCode' &&
+      agent.getName() === 'Augment' &&
       mcpPath.endsWith('.vscode/settings.json')
     ) {
       logVerbose(
-        `Skipping MCP handling for AugmentCode settings.json - handled separately`,
+        `Skipping MCP handling for Augment settings.json - handled separately`,
         verbose,
       );
     } else {

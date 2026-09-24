@@ -13,9 +13,11 @@ export class QwenCodeAgent extends AgentsMdAgent {
   }
 
   async applySkillerConfig(
-    concatenatedRules: string,
+    _concatenatedRules: string,
     projectRoot: string,
+    _skillerMcpJson: Record<string, unknown> | null,
   ): Promise<void> {
+    void _skillerMcpJson;
     // Ensure .qwen/settings.json has contextFileName set to AGENTS.md
     const settingsPath = path.join(projectRoot, '.qwen', 'settings.json');
     let existingSettings: Record<string, unknown> = {};

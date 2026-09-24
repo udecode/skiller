@@ -245,11 +245,17 @@ export async function readMarkdownFiles(
     processedFiles = cursorFiles;
   }
 
+  const isCanonicalSkillerDir =
+    path.basename(skillerDir) === CANONICAL_SKILLER_DIR;
   const supplementalFiles = processedFiles
-    .filter((file) => file.path !== path.join(skillerDir, PROJECT_AGENTS_FILE))
+    .filter(
+      (file) =>
+        !isCanonicalSkillerDir ||
+        file.path !== path.join(skillerDir, PROJECT_AGENTS_FILE),
+    )
     .sort((a, b) => a.path.localeCompare(b.path));
 
-  if (path.basename(skillerDir) !== CANONICAL_SKILLER_DIR) {
+  if (!isCanonicalSkillerDir) {
     return supplementalFiles;
   }
 

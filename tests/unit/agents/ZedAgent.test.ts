@@ -49,7 +49,7 @@ describe('ZedAgent', () => {
 
   it('creates .zed/settings.json with transformed MCP server configuration when file does not exist', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Test rules',
+      'AGENTS.md': 'Test rules',
     });
 
     try {
@@ -88,7 +88,7 @@ describe('ZedAgent', () => {
 
   it('merges transformed MCP server configuration into existing .zed/settings.json file', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Test rules',
+      'AGENTS.md': 'Test rules',
     });
 
     try {
@@ -149,7 +149,7 @@ describe('ZedAgent', () => {
 
   it('does not modify .zed/settings.json when no MCP config provided', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Test rules',
+      'AGENTS.md': 'Test rules',
     });
 
     try {
@@ -168,7 +168,7 @@ describe('ZedAgent', () => {
 
   it('handles overwrite strategy for MCP servers with format transformation', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Test rules',
+      'AGENTS.md': 'Test rules',
     });
 
     try {
@@ -254,10 +254,10 @@ describe('ZedAgent', () => {
     expect(transformed.type).toBeUndefined();
   });
 
-  it('applies MCP configuration via full apply flow without external interference', async () => {
+  it('applies MCP configuration without rewriting instructions', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Test rules for apply flow',
-      '.claude/skiller.toml': `
+      'AGENTS.md': 'Test rules for apply flow',
+      '.agents/skiller.toml': `
 [mcp_servers.test_server]
 type = "stdio"
 command = "test-cmd"
@@ -267,23 +267,16 @@ env = { TEST_VAR = "test_value" }
     });
 
     try {
-      // Import applyAllAgentConfigs to test the full flow
-      const { applyAllAgentConfigs } = await import('../../../src/lib');
-
-      // Apply configuration only to Zed agent through the full flow
-      await applyAllAgentConfigs(
-        projectRoot,
-        ['zed'], // Only apply to Zed
-        undefined, // Use default config path
-        true, // MCP enabled
-        undefined, // Default strategy
-        undefined, // Default gitignore
-        false, // Not verbose
-        false, // Not dry run
-        false, // Not local only
-        false, // Not nested
-        true, // Backup enabled
-      );
+      await new ZedAgent().applySkillerConfig('Generated rules', projectRoot, {
+        mcpServers: {
+          test_server: {
+            type: 'stdio',
+            command: 'test-cmd',
+            args: ['arg1', 'arg2'],
+            env: { TEST_VAR: 'test_value' },
+          },
+        },
+      });
 
       // Check the generated .zed/settings.json
       const zedSettingsPath = path.join(projectRoot, '.zed', 'settings.json');
@@ -293,6 +286,9 @@ env = { TEST_VAR = "test_value" }
       // Verify the transformation was applied correctly
       expect(settings.context_servers).toBeDefined();
       expect(settings.context_servers.test_server).toBeDefined();
+      await expect(
+        fs.readFile(path.join(projectRoot, 'AGENTS.md'), 'utf8'),
+      ).resolves.toBe('Test rules for apply flow');
 
       const serverConfig = settings.context_servers.test_server;
       // Should have transformed format: no "type", has "source": "custom"

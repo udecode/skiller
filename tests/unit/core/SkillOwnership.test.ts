@@ -193,10 +193,6 @@ description: Orphaned skill
       'default_agents = ["codex"]\n',
     );
     await fs.writeFile(
-      path.join(tmpDir, '.claude', 'AGENTS.md'),
-      '# Legacy instructions\n',
-    );
-    await fs.writeFile(
       path.join(tmpDir, '.claude', '.skiller.json'),
       JSON.stringify(
         {
@@ -270,9 +266,6 @@ alwaysApply: true
     await expect(
       fs.access(path.join(tmpDir, '.claude', 'skiller.toml')),
     ).rejects.toThrow();
-    expect(
-      await fs.readFile(path.join(tmpDir, '.claude', 'AGENTS.md'), 'utf8'),
-    ).toBe('# Legacy instructions\n');
     await expect(
       fs.access(path.join(tmpDir, '.claude', '.skiller.json')),
     ).rejects.toThrow();
@@ -282,27 +275,6 @@ alwaysApply: true
     await expect(
       fs.access(path.join(tmpDir, '.claude', 'rules')),
     ).rejects.toThrow();
-  });
-
-  it('leaves legacy instruction files alone', async () => {
-    await fs.writeFile(
-      path.join(tmpDir, '.agents', 'AGENTS.md'),
-      '# Same instructions\n',
-    );
-    await fs.mkdir(path.join(tmpDir, '.claude'), { recursive: true });
-    await fs.writeFile(
-      path.join(tmpDir, '.claude', 'AGENTS.md'),
-      '# Same instructions\n',
-    );
-
-    await migrateLegacyProjectState(tmpDir, false);
-
-    expect(
-      await fs.readFile(path.join(tmpDir, '.agents', 'AGENTS.md'), 'utf8'),
-    ).toBe('# Same instructions\n');
-    expect(
-      await fs.readFile(path.join(tmpDir, '.claude', 'AGENTS.md'), 'utf8'),
-    ).toBe('# Same instructions\n');
   });
 
   it('does not re-extract local rules from .claude mirrors after canonical migration already exists', async () => {
@@ -380,28 +352,6 @@ enabled = false
     expect(migratedToml).toContain('[agents.qwen-code]');
     expect(migratedToml).not.toContain('[agents.claude]');
     expect(migratedToml).not.toContain('[agents.qwen]');
-  });
-
-  it('does not migrate conflicting legacy instruction files', async () => {
-    await fs.writeFile(
-      path.join(tmpDir, '.agents', 'AGENTS.md'),
-      '# Canonical instructions\n',
-    );
-    await fs.mkdir(path.join(tmpDir, '.claude'), { recursive: true });
-    await fs.writeFile(
-      path.join(tmpDir, '.claude', 'AGENTS.md'),
-      '# Legacy instructions\n',
-    );
-
-    await expect(
-      migrateLegacyProjectState(tmpDir, false),
-    ).resolves.toBeUndefined();
-    expect(
-      await fs.readFile(path.join(tmpDir, '.agents', 'AGENTS.md'), 'utf8'),
-    ).toBe('# Canonical instructions\n');
-    expect(
-      await fs.readFile(path.join(tmpDir, '.claude', 'AGENTS.md'), 'utf8'),
-    ).toBe('# Legacy instructions\n');
   });
 
   it('ignores legacy .claude skill folders when canonical .agents skills already exist', async () => {

@@ -4,21 +4,26 @@ import * as os from 'os';
 import { readMarkdownFiles } from '../../../src/core/FileSystemUtils';
 
 describe('Cursor Mode', () => {
+  let projectRoot: string;
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skiller-cursor-test-'));
+    projectRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'skiller-cursor-test-'),
+    );
+    testDir = path.join(projectRoot, '.agents');
+    await fs.mkdir(testDir);
   });
 
   afterEach(async () => {
-    await fs.rm(testDir, { recursive: true, force: true });
+    await fs.rm(projectRoot, { recursive: true, force: true });
   });
 
   describe('merge_strategy: cursor', () => {
     it('should include AGENTS.md and rules/*.mdc files with alwaysApply: true', async () => {
       // Create AGENTS.md
       await fs.writeFile(
-        path.join(testDir, 'AGENTS.md'),
+        path.join(projectRoot, 'AGENTS.md'),
         '# Main Agent Instructions\n\nGeneral guidelines for all agents.',
       );
 
@@ -65,14 +70,18 @@ This content should be excluded (no alwaysApply).`,
       // Should include AGENTS.md and only always-applied.mdc
       expect(files.length).toBe(2);
       expect(files.some((f) => f.path.endsWith('AGENTS.md'))).toBe(true);
-      expect(files.some((f) => f.path.endsWith('always-applied.mdc'))).toBe(true);
+      expect(files.some((f) => f.path.endsWith('always-applied.mdc'))).toBe(
+        true,
+      );
       expect(files.some((f) => f.path.endsWith('not-applied.mdc'))).toBe(false);
-      expect(files.some((f) => f.path.endsWith('no-frontmatter.mdc'))).toBe(false);
+      expect(files.some((f) => f.path.endsWith('no-frontmatter.mdc'))).toBe(
+        false,
+      );
     });
 
     it('should strip frontmatter from included .mdc files', async () => {
       await fs.writeFile(
-        path.join(testDir, 'AGENTS.md'),
+        path.join(projectRoot, 'AGENTS.md'),
         '# Main Instructions',
       );
 
@@ -109,7 +118,7 @@ This is the actual content.`,
 
     it('should not strip frontmatter from AGENTS.md', async () => {
       await fs.writeFile(
-        path.join(testDir, 'AGENTS.md'),
+        path.join(projectRoot, 'AGENTS.md'),
         `---
 custom: metadata
 ---
@@ -131,7 +140,7 @@ With frontmatter.`,
 
     it('should process .mdc files in both rules/ and skills/ directories', async () => {
       await fs.writeFile(
-        path.join(testDir, 'AGENTS.md'),
+        path.join(projectRoot, 'AGENTS.md'),
         '# Main Instructions',
       );
 
@@ -173,7 +182,7 @@ Content in skills/`,
 
     it('should exclude .mdc files in other/ directories (non-rules, non-skills)', async () => {
       await fs.writeFile(
-        path.join(testDir, 'AGENTS.md'),
+        path.join(projectRoot, 'AGENTS.md'),
         '# Main Instructions',
       );
 
@@ -208,12 +217,14 @@ Content not in rules/`,
       // Should only include AGENTS.md and the file in rules/
       expect(files.length).toBe(2);
       expect(files.some((f) => f.path.includes('in-rules.mdc'))).toBe(true);
-      expect(files.some((f) => f.path.includes('not-in-rules.mdc'))).toBe(false);
+      expect(files.some((f) => f.path.includes('not-in-rules.mdc'))).toBe(
+        false,
+      );
     });
 
     it('should work with nested subdirectories in rules/', async () => {
       await fs.writeFile(
-        path.join(testDir, 'AGENTS.md'),
+        path.join(projectRoot, 'AGENTS.md'),
         '# Main Instructions',
       );
 
@@ -239,7 +250,7 @@ Nested rule content`,
 
     it('should handle empty rules/ directory', async () => {
       await fs.writeFile(
-        path.join(testDir, 'AGENTS.md'),
+        path.join(projectRoot, 'AGENTS.md'),
         '# Main Instructions',
       );
 
@@ -278,7 +289,7 @@ Rule content`,
 
     it('should ignore .md files in rules/ directory', async () => {
       await fs.writeFile(
-        path.join(testDir, 'AGENTS.md'),
+        path.join(projectRoot, 'AGENTS.md'),
         '# Main Instructions',
       );
 
@@ -313,7 +324,7 @@ This .mdc file should be included`,
 
     it('should maintain alphabetical order (AGENTS.md first, then sorted rules)', async () => {
       await fs.writeFile(
-        path.join(testDir, 'AGENTS.md'),
+        path.join(projectRoot, 'AGENTS.md'),
         '# Main Instructions',
       );
 
@@ -365,7 +376,7 @@ Middle content`,
   describe('merge_strategy: all (default)', () => {
     it('should include all markdown files regardless of frontmatter', async () => {
       await fs.writeFile(
-        path.join(testDir, 'AGENTS.md'),
+        path.join(projectRoot, 'AGENTS.md'),
         '# Main Instructions',
       );
 
@@ -391,8 +402,12 @@ Content with frontmatter`,
       // Should include all files
       expect(files.length).toBe(3);
       expect(files.some((f) => f.path.endsWith('AGENTS.md'))).toBe(true);
-      expect(files.some((f) => f.path.endsWith('with-frontmatter.mdc'))).toBe(true);
-      expect(files.some((f) => f.path.endsWith('without-frontmatter.md'))).toBe(true);
+      expect(files.some((f) => f.path.endsWith('with-frontmatter.mdc'))).toBe(
+        true,
+      );
+      expect(files.some((f) => f.path.endsWith('without-frontmatter.md'))).toBe(
+        true,
+      );
     });
 
     it('should not strip frontmatter in default mode', async () => {

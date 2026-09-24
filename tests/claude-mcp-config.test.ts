@@ -1,78 +1,78 @@
-import * as fs from "fs/promises";
-import * as path from "path";
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import {
-	setupTestProject,
-	teardownTestProject,
-	runSkillerWithInheritedStdio,
-} from "./harness";
+  setupTestProject,
+  teardownTestProject,
+  runSkillerWithInheritedStdio,
+} from './harness';
 
-describe("claude-mcp-config", () => {
-	let testProject: { projectRoot: string };
+describe('claude-mcp-config', () => {
+  let testProject: { projectRoot: string };
 
-	beforeEach(async () => {
-		// Create skiller MCP config
-		const skillerMcp = {
-			mcpServers: { skiller_server: { url: "http://skiller.com" } },
-		};
+  beforeEach(async () => {
+    // Create skiller MCP config
+    const skillerMcp = {
+      mcpServers: { skiller_server: { url: 'http://skiller.com' } },
+    };
 
-		// Create Claude MCP config - initially empty or non-existent
-		const claudeNative = {
-			mcpServers: { native_claude_server: { url: "http://claude.com" } },
-		};
+    // Create Claude MCP config - initially empty or non-existent
+    const claudeNative = {
+      mcpServers: { native_claude_server: { url: 'http://claude.com' } },
+    };
 
-		testProject = await setupTestProject({
-			".claude/mcp.json": JSON.stringify(skillerMcp, null, 2) + "\n",
-			".mcp.json": JSON.stringify(claudeNative, null, 2) + "\n",
-		});
-	});
+    testProject = await setupTestProject({
+      '.agents/mcp.json': JSON.stringify(skillerMcp, null, 2) + '\n',
+      '.mcp.json': JSON.stringify(claudeNative, null, 2) + '\n',
+    });
+  });
 
-	afterEach(async () => {
-		await teardownTestProject(testProject.projectRoot);
-	});
+  afterEach(async () => {
+    await teardownTestProject(testProject.projectRoot);
+  });
 
-	it('should use "mcpServers" key for Claude Code', async () => {
-		const { projectRoot } = testProject;
+  it('should use "mcpServers" key for Claude Code', async () => {
+    const { projectRoot } = testProject;
 
-		runSkillerWithInheritedStdio("apply --agents claude", projectRoot);
+    runSkillerWithInheritedStdio('apply --agents claude-code', projectRoot);
 
-		// Verify Claude MCP config uses 'mcpServers' key
-		const claudeResultText = await fs.readFile(
-			path.join(projectRoot, ".mcp.json"),
-			"utf8",
-		);
-		const claudeResult = JSON.parse(claudeResultText);
+    // Verify Claude MCP config uses 'mcpServers' key
+    const claudeResultText = await fs.readFile(
+      path.join(projectRoot, '.mcp.json'),
+      'utf8',
+    );
+    const claudeResult = JSON.parse(claudeResultText);
 
-		// Should have 'mcpServers' key, not empty string or other
-		expect(claudeResult.mcpServers).toBeDefined();
-		expect(claudeResult[""]).toBeUndefined(); // Should not have empty string key
+    // Should have 'mcpServers' key, not empty string or other
+    expect(claudeResult.mcpServers).toBeDefined();
+    expect(claudeResult['']).toBeUndefined(); // Should not have empty string key
 
-		// Should contain both native and skiller servers
-		expect(Object.keys(claudeResult.mcpServers).sort()).toEqual([
-			"native_claude_server",
-			"skiller_server",
-		]);
-	});
+    // Should contain both native and skiller servers
+    expect(Object.keys(claudeResult.mcpServers).sort()).toEqual([
+      'native_claude_server',
+      'skiller_server',
+    ]);
+  });
 
-	it('should use "mcpServers" key for Claude Code with overwrite strategy', async () => {
-		const { projectRoot } = testProject;
+  it('should use "mcpServers" key for Claude Code with overwrite strategy', async () => {
+    const { projectRoot } = testProject;
 
-		runSkillerWithInheritedStdio(
-			"apply --agents claude --mcp-overwrite",
-			projectRoot,
-		);
+    runSkillerWithInheritedStdio(
+      'apply --agents claude-code --mcp-overwrite',
+      projectRoot,
+    );
 
-		// Verify Claude MCP config was overwritten and uses 'mcpServers' key
-		const claudeResultText = await fs.readFile(
-			path.join(projectRoot, ".mcp.json"),
-			"utf8",
-		);
-		const claudeResult = JSON.parse(claudeResultText);
+    // Verify Claude MCP config was overwritten and uses 'mcpServers' key
+    const claudeResultText = await fs.readFile(
+      path.join(projectRoot, '.mcp.json'),
+      'utf8',
+    );
+    const claudeResult = JSON.parse(claudeResultText);
 
-		// Should have 'mcpServers' key, not empty string or other
-		expect(claudeResult.mcpServers).toBeDefined();
-		expect(claudeResult[""]).toBeUndefined(); // Should not have empty string key
+    // Should have 'mcpServers' key, not empty string or other
+    expect(claudeResult.mcpServers).toBeDefined();
+    expect(claudeResult['']).toBeUndefined(); // Should not have empty string key
 
-		// Should contain only skiller server (overwrite should remove native)
-		expect(Object.keys(claudeResult.mcpServers)).toEqual(["skiller_server"]);
-	});
+    // Should contain only skiller server (overwrite should remove native)
+    expect(Object.keys(claudeResult.mcpServers)).toEqual(['skiller_server']);
+  });
 });

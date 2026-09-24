@@ -30,7 +30,10 @@ enabled = true
     await fs.writeFile(path.join(skillerDir, 'skiller.toml'), tomlContent);
 
     // Create minimal AGENTS.md and one canonical skill
-    await fs.writeFile(path.join(skillerDir, 'AGENTS.md'), '# Test');
+    await fs.writeFile(
+      path.join(path.dirname(skillerDir), 'AGENTS.md'),
+      '# Test',
+    );
     await fs.mkdir(path.join(projectRoot, '.agents', 'skills', 'local-skill'), {
       recursive: true,
     });
@@ -92,7 +95,10 @@ enabled = true
     await fs.writeFile(path.join(skillerDir, 'skiller.toml'), tomlContent);
 
     // Create minimal AGENTS.md
-    await fs.writeFile(path.join(skillerDir, 'AGENTS.md'), '# Test');
+    await fs.writeFile(
+      path.join(path.dirname(skillerDir), 'AGENTS.md'),
+      '# Test',
+    );
 
     // Create a minimal MCP config to trigger MCP file generation
     const mcpConfig = {
@@ -132,9 +138,9 @@ enabled = true
     expect(gitignoreContent).not.toContain('CLAUDE.md');
     // Claude's MCP file (.mcp.json) should also NOT be in gitignore (gitignore = false)
     expect(gitignoreContent).not.toContain('.mcp.json');
-    // But AGENTS.md should be in gitignore (default gitignore = true for codex)
-    expect(gitignoreContent).toContain('AGENTS.md');
-    // And .codex/config.toml should be in gitignore
+    // Root AGENTS.md is authored and must never be ignored.
+    expect(gitignoreContent).not.toContain('AGENTS.md');
+    // Codex's generated config remains ignored.
     expect(gitignoreContent).toContain('.codex/config.toml');
   });
 });
