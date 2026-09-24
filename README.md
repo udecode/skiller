@@ -2,6 +2,9 @@
 
 Apply the same rules (and skills) to multiple AI coding agents.
 
+Write shared project instructions in the repository's root `AGENTS.md`. Skiller
+reads that file when producing agent-specific rules and never rewrites it.
+
 ```bash
 npx skiller@latest init
 npx skiller@latest install
@@ -37,7 +40,7 @@ npx skiller@latest install
 | Identifier       | Agent          | Rules                                              | MCP                            | Skills              |
 | ---------------- | -------------- | -------------------------------------------------- | ------------------------------ | ------------------- |
 | `github-copilot` | GitHub Copilot | `AGENTS.md`                                        | `.vscode/mcp.json` (`servers`) | `.agents/skills`    |
-| `claude-code`    | Claude Code    | `CLAUDE.md` (`@file` refs)                         | `.mcp.json`                    | `.claude/skills`    |
+| `claude-code`    | Claude Code    | `AGENTS.md`                                        | `.mcp.json`                    | `.claude/skills`    |
 | `codex`          | Codex          | `AGENTS.md`, `.codex/config.toml`                  | `.codex/config.toml`           | `.agents/skills`    |
 | `cursor`         | Cursor         | `AGENTS.md`                                        | `.cursor/mcp.json`             | `.agents/skills`    |
 | `windsurf`       | Windsurf       | `AGENTS.md`                                        | `.windsurf/mcp_config.json`    | `.windsurf/skills`  |

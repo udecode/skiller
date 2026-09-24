@@ -9,9 +9,9 @@ Skiller is a Node CLI (Node >= 18).
 
 ## `skiller init`
 
-Scaffolds a `.agents/` folder.
+Scaffolds root instructions and a `.agents/` configuration folder.
 
-- Creates `.agents/AGENTS.md`
+- Creates root `AGENTS.md` without overwriting an existing file
 - Creates `.agents/skiller.toml`
 - `skiller init --global` writes to `$XDG_CONFIG_HOME/skiller` (default `~/.config/skiller`)
 
@@ -25,7 +25,7 @@ Scaffolds a `.agents/` folder.
 
 ## `skiller apply`
 
-Reads rules, selects agents, writes agent-specific files, then optionally syncs MCP, skills, and `.gitignore`.
+Reads root `AGENTS.md` and supplemental rules, selects agents, writes agent-specific files, then optionally syncs MCP, skills, and `.gitignore`. It never rewrites root `AGENTS.md`.
 
 Flags:
 
@@ -66,7 +66,7 @@ Preset authoring:
 - `preset.toml` can declare `include = ["../../.agents/rules/react.mdc", "../../skills-lock.json"]`.
 - Include entries must resolve to files, not directories.
 - Included files are resolved relative to the preset root.
-- Skiller derives the target path from the first supported root marker: `.agents`, `.claude`, `.codex`, `skills-lock.json`, or `skiller-lock.json`.
+- Skiller derives the target path from `AGENTS.md` or the first supported root marker: `.agents`, `.claude`, `.codex`, `skills-lock.json`, or `skiller-lock.json`.
 - Files physically present inside the preset root still win over included files with the same target path.
 
 ## `skiller update`

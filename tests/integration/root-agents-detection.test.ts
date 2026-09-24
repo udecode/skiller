@@ -1,74 +1,67 @@
-import * as fs from "fs/promises";
-import * as path from "path";
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import {
-	setupTestProject,
-	teardownTestProject,
-	runSkillerWithInheritedStdio,
-} from "../harness";
+  setupTestProject,
+  teardownTestProject,
+  runSkillerWithInheritedStdio,
+} from '../harness';
 
-/**
- * Integration test for Task 4: Auto-detect repository root AGENTS.md
- */
-describe("Root AGENTS.md detection", () => {
-	let projectRoot: string;
+describe('authored root AGENTS.md', () => {
+  it('is used for projections without being rewritten or ignored', async () => {
+    const { projectRoot } = await setupTestProject({
+      'AGENTS.md': '# Shared instructions\n',
+      '.agents/skiller.toml':
+        'default_agents = ["claude-code", "codex", "cline"]\n',
+      '.agents/extra.md': '# Supplemental rule\n',
+      '.agents/AGENTS.md': '# Obsolete source\n',
+    });
+    try {
+      runSkillerWithInheritedStdio('apply --no-skills', projectRoot);
+      expect(
+        await fs.readFile(path.join(projectRoot, 'AGENTS.md'), 'utf8'),
+      ).toBe('# Shared instructions\n');
+      const clineRules = await fs.readFile(
+        path.join(projectRoot, '.clinerules'),
+        'utf8',
+      );
+      expect(clineRules).toContain('# Shared instructions');
+      expect(clineRules).toContain('# Supplemental rule');
+      expect(clineRules).not.toContain('# Obsolete source');
+      await expect(
+        fs.stat(path.join(projectRoot, 'CLAUDE.md')),
+      ).rejects.toThrow();
+      const gitignore = await fs.readFile(
+        path.join(projectRoot, '.gitignore'),
+        'utf8',
+      );
+      expect(gitignore).not.toContain('/AGENTS.md');
+      runSkillerWithInheritedStdio(
+        'revert --agents claude-code,codex,cline',
+        projectRoot,
+      );
+      expect(
+        await fs.readFile(path.join(projectRoot, 'AGENTS.md'), 'utf8'),
+      ).toBe('# Shared instructions\n');
+    } finally {
+      await teardownTestProject(projectRoot);
+    }
+  });
 
-	beforeAll(async () => {
-		const proj = await setupTestProject({
-			".claude/AGENTS.md": "Inner rules file",
-			".claude/extra.md": "Extra inner file",
-		});
-		projectRoot = proj.projectRoot;
-	});
-
-	afterAll(async () => {
-		await teardownTestProject(projectRoot);
-	});
-
-	afterEach(async () => {
-		// Clean generated outputs between tests
-		await fs.rm(path.join(projectRoot, "AGENTS.md"), { force: true });
-		await fs.rm(path.join(projectRoot, ".github"), {
-			recursive: true,
-			force: true,
-		});
-		await fs.rm(path.join(projectRoot, "CLAUDE.md"), { force: true });
-	});
-
-	it("concatenates root AGENTS.md before .claude markdown files when both exist", async () => {
-		// Create a root AGENTS.md (outside .claude) with distinct content
-		const rootAgentsPath = path.join(projectRoot, "AGENTS.md");
-		await fs.writeFile(rootAgentsPath, "Root priority content", "utf8");
-
-		// Run apply to generate agent outputs (use a single agent for simplicity)
-		runSkillerWithInheritedStdio("apply --agents codex", projectRoot);
-
-		const codexOutput = await fs.readFile(
-			path.join(projectRoot, "AGENTS.md"),
-			"utf8",
-		);
-		// Expect root content appears before inner content by checking order of markers
-		const rootIndex = codexOutput.indexOf("Root priority content");
-		const innerIndex = codexOutput.indexOf("Inner rules file");
-		expect(rootIndex).toBeGreaterThanOrEqual(0);
-		expect(innerIndex).toBeGreaterThan(rootIndex);
-
-		// Verify source annotations reflect correct relative paths
-		expect(codexOutput).toMatch(/<!-- Source: AGENTS.md -->/);
-		expect(codexOutput).toMatch(/<!-- Source: \.claude\/AGENTS.md -->/);
-	});
-
-	it("uses only .claude files when root AGENTS.md missing", async () => {
-		// Ensure root AGENTS.md absent
-		await fs.rm(path.join(projectRoot, "AGENTS.md"), { force: true });
-
-		runSkillerWithInheritedStdio("apply --agents codex", projectRoot);
-		const codexOutput = await fs.readFile(
-			path.join(projectRoot, "AGENTS.md"),
-			"utf8",
-		);
-		expect(codexOutput).toContain("Inner rules file");
-		expect(codexOutput).toContain("Extra inner file");
-		// Should NOT include a Source section for root AGENTS.md
-		expect(codexOutput).not.toMatch(/<!-- Source: AGENTS.md -->$/m);
-	});
+  it('does not create AGENTS.md when it is absent', async () => {
+    const { projectRoot } = await setupTestProject({
+      '.agents/skiller.toml': 'default_agents = ["claude-code", "codex"]\n',
+      '.agents/extra.md': '# Supplemental rule\n',
+    });
+    try {
+      runSkillerWithInheritedStdio('apply --no-skills', projectRoot);
+      await expect(
+        fs.stat(path.join(projectRoot, 'AGENTS.md')),
+      ).rejects.toThrow();
+      await expect(
+        fs.stat(path.join(projectRoot, 'CLAUDE.md')),
+      ).rejects.toThrow();
+    } finally {
+      await teardownTestProject(projectRoot);
+    }
+  });
 });

@@ -1,9 +1,7 @@
-# Ruler Configuration for Informed Medical
-# This project uses Ruler to manage AI agent instructions
-# Source: .ruler/ directory | Generated: root AGENTS.md, CLAUDE.md, etc.
+# Skiller project configuration
 
 # Default agents to apply when --agents flag is not specified
-default_agents = ["claude", "codex"]
+default_agents = ["claude-code", "codex"]
 
 # --- Fork Configuration ---
 
@@ -31,9 +29,8 @@ merge_strategy = "merge"
 # --- Agent-Specific Configuration ---
 
 # Claude Code (primary agent)
-[agents.claude]
+[agents.claude-code]
 enabled = true
-output_path = "CLAUDE.md"
 gitignore = false
 
 # Cursor (secondary agent)

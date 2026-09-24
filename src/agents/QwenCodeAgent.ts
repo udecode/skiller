@@ -1,4 +1,3 @@
-import { IAgentConfig } from './IAgent';
 import * as path from 'path';
 import { promises as fs } from 'fs';
 import { AgentsMdAgent } from './AgentsMdAgent';
@@ -16,14 +15,7 @@ export class QwenCodeAgent extends AgentsMdAgent {
   async applySkillerConfig(
     concatenatedRules: string,
     projectRoot: string,
-    _skillerMcpJson: Record<string, unknown> | null,
-    agentConfig?: IAgentConfig,
   ): Promise<void> {
-    // First, perform idempotent write of AGENTS.md via base class
-    await super.applySkillerConfig(concatenatedRules, projectRoot, null, {
-      outputPath: agentConfig?.outputPath,
-    });
-
     // Ensure .qwen/settings.json has contextFileName set to AGENTS.md
     const settingsPath = path.join(projectRoot, '.qwen', 'settings.json');
     let existingSettings: Record<string, unknown> = {};

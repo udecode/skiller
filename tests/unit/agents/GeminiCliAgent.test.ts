@@ -19,9 +19,9 @@ describe('GeminiCliAgent', () => {
     expect(agent.getMcpServerKey()).toBe('mcpServers');
   });
 
-  it('writes AGENTS.md and sets contextFileName in .gemini/settings.json', async () => {
+  it('preserves AGENTS.md and sets contextFileName in .gemini/settings.json', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Rule A',
+      'AGENTS.md': 'Rule A',
     });
     try {
       const agent = new GeminiCliAgent();
@@ -29,11 +29,9 @@ describe('GeminiCliAgent', () => {
 
       await agent.applySkillerConfig(rules, projectRoot, null);
 
-      // AGENTS.md should be written at the repository root
+      // AGENTS.md remains authored at the repository root.
       const agentsMdPath = path.join(projectRoot, 'AGENTS.md');
-      await expect(fs.readFile(agentsMdPath, 'utf8')).resolves.toContain(
-        'Rule A',
-      );
+      await expect(fs.readFile(agentsMdPath, 'utf8')).resolves.toBe('Rule A');
 
       // .gemini/settings.json should include contextFileName: "AGENTS.md"
       const settingsPath = path.join(projectRoot, '.gemini', 'settings.json');

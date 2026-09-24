@@ -1,48 +1,17 @@
-import { IAgent, IAgentConfig } from './IAgent';
 import { AgentsMdAgent } from './AgentsMdAgent';
 import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * GitHub Copilot agent adapter.
- * Writes to AGENTS.md for both web-based GitHub Copilot and VS Code extension.
+ * Uses the authored AGENTS.md for both web-based GitHub Copilot and VS Code.
  */
-export class CopilotAgent implements IAgent {
-  private agentsMdAgent = new AgentsMdAgent();
-
+export class CopilotAgent extends AgentsMdAgent {
   getIdentifier(): string {
     return 'github-copilot';
   }
 
   getName(): string {
     return getAgentDisplayName('github-copilot');
-  }
-
-  /**
-   * Returns the default output path for AGENTS.md.
-   */
-  getDefaultOutputPath(projectRoot: string): string {
-    return this.agentsMdAgent.getDefaultOutputPath(projectRoot);
-  }
-
-  async applySkillerConfig(
-    concatenatedRules: string,
-    projectRoot: string,
-    skillerMcpJson: Record<string, unknown> | null,
-    agentConfig?: IAgentConfig,
-    backup = true,
-  ): Promise<void> {
-    // Write to AGENTS.md using the existing AgentsMdAgent infrastructure
-    await this.agentsMdAgent.applySkillerConfig(
-      concatenatedRules,
-      projectRoot,
-      null, // No MCP config needed for the instructions file
-      {
-        // Preserve explicit outputPath precedence semantics if provided
-        outputPath:
-          agentConfig?.outputPath || agentConfig?.outputPathInstructions,
-      },
-      backup,
-    );
   }
 
   getMcpServerKey(): string {

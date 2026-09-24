@@ -41,37 +41,23 @@ describe('ClaudeAgent', () => {
     const agent = new ClaudeAgent();
     const projectRoot = '/test/project';
     expect(agent.getDefaultOutputPath(projectRoot)).toBe(
-      path.join(projectRoot, 'CLAUDE.md'),
+      path.join(projectRoot, 'AGENTS.md'),
     );
   });
 
-  it('writes @filename references to CLAUDE.md file', async () => {
+  it('leaves authored AGENTS.md unchanged and creates no CLAUDE.md', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Rule A',
+      'AGENTS.md': 'Rule A',
     });
     try {
       const agent = new ClaudeAgent();
-      const rules = 'Combined rules\n- Rule A';
-      const ruleFiles = [
-        {
-          path: path.join(projectRoot, '.claude/AGENTS.md'),
-          content: 'Rule A',
-        },
-      ];
-
-      await agent.applySkillerConfig(
-        rules,
-        projectRoot,
-        null,
-        undefined,
-        true,
-        ruleFiles,
+      await agent.applySkillerConfig('Combined rules', projectRoot, null);
+      expect(await fs.readFile(path.join(projectRoot, 'AGENTS.md'), 'utf8')).toBe(
+        'Rule A',
       );
-
-      // CLAUDE.md should be written at the repository root with @filename references
-      const claudeMdPath = path.join(projectRoot, 'CLAUDE.md');
-      const content = await fs.readFile(claudeMdPath, 'utf8');
-      expect(content).toContain('@.claude/AGENTS.md');
+      await expect(
+        fs.stat(path.join(projectRoot, 'CLAUDE.md')),
+      ).rejects.toThrow();
     } finally {
       await teardownTestProject(projectRoot);
     }

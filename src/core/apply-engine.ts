@@ -463,7 +463,6 @@ export async function applyConfigurationsToAgents(
   skillerDir?: string,
 ): Promise<string[]> {
   const generatedPaths: string[] = [];
-  let agentsMdWritten = false;
 
   for (const agent of agents) {
     logInfo(`Applying rules for ${agent.getName()}...`, dryRun);
@@ -490,23 +489,13 @@ export async function applyConfigurationsToAgents(
     }
 
     if (dryRun) {
-      logVerbose(
-        `DRY RUN: Would write rules to: ${outputPaths.join(', ')}`,
-        verbose,
-      );
-    } else {
-      let skipApplyForThisAgent = false;
-      if (
-        agent.getIdentifier() === 'jules' ||
-        agent.getIdentifier() === 'agentsmd'
-      ) {
-        if (agentsMdWritten) {
-          // Skip rewriting AGENTS.md, but still allow MCP handling below
-          skipApplyForThisAgent = true;
-        } else {
-          agentsMdWritten = true;
-        }
+      if (outputPaths.length > 0) {
+        logVerbose(
+          `DRY RUN: Would write rules to: ${outputPaths.join(', ')}`,
+          verbose,
+        );
       }
+    } else {
       let finalAgentConfig = agentConfig;
       if (agent.getIdentifier() === 'augmentcode' && skillerMcpJson) {
         const resolvedStrategy =
@@ -524,28 +513,26 @@ export async function applyConfigurationsToAgents(
         };
       }
 
-      if (!skipApplyForThisAgent) {
-        await agent.applySkillerConfig(
-          concatenatedRules,
-          projectRoot,
-          skillerMcpJson,
-          finalAgentConfig,
-          backup,
-          ruleFiles,
-          skillerDir,
-          config.rules?.merge_strategy,
-        );
+      await agent.applySkillerConfig(
+        concatenatedRules,
+        projectRoot,
+        skillerMcpJson,
+        finalAgentConfig,
+        backup,
+        ruleFiles,
+        skillerDir,
+        config.rules?.merge_strategy,
+      );
 
-        // Add .cursor/rules to gitignore when copying from .claude
-        if (
-          agent.getIdentifier() === 'cursor' &&
-          config.rules?.merge_strategy === 'cursor' &&
-          skillerDir &&
-          path.basename(skillerDir) === '.claude'
-        ) {
-          const cursorRulesPath = path.join(projectRoot, '.cursor', 'rules');
-          generatedPaths.push(cursorRulesPath);
-        }
+      // Add .cursor/rules to gitignore when copying from .claude
+      if (
+        agent.getIdentifier() === 'cursor' &&
+        config.rules?.merge_strategy === 'cursor' &&
+        skillerDir &&
+        path.basename(skillerDir) === '.claude'
+      ) {
+        const cursorRulesPath = path.join(projectRoot, '.cursor', 'rules');
+        generatedPaths.push(cursorRulesPath);
       }
     }
 

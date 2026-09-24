@@ -5,7 +5,7 @@ import type { IAgentConfig } from './IAgent';
 
 /**
  * Zed editor agent adapter.
- * Inherits from AgentsMdAgent to write instructions to AGENTS.md and handles
+ * Reads the authored AGENTS.md and handles
  * MCP server configuration in .zed/settings.json at the project root.
  */
 export class ZedAgent extends AgentsMdAgent {
@@ -23,11 +23,6 @@ export class ZedAgent extends AgentsMdAgent {
     skillerMcpJson: Record<string, unknown> | null,
     agentConfig?: IAgentConfig,
   ): Promise<void> {
-    // First, perform idempotent AGENTS.md write via base class
-    await super.applySkillerConfig(concatenatedRules, projectRoot, null, {
-      outputPath: agentConfig?.outputPath,
-    });
-
     // Handle MCP server configuration if enabled and provided
     const mcpEnabled = agentConfig?.mcp?.enabled ?? true;
     if (mcpEnabled && skillerMcpJson) {

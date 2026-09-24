@@ -4,6 +4,7 @@
 
 - Run `skiller init` at your project root
 - Ensure `.agents/skiller.toml` exists (Skiller only treats a `.agents/` folder as active if it has `skiller.toml`)
+- Ensure shared instructions are in root `AGENTS.md`; `.agents/AGENTS.md` is not read
 
 ## "Invalid configuration file format"
 

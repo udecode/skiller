@@ -145,5 +145,4 @@ issue-body.md
 /.claude/.skiller.json
 /.codex/config.toml
 /.cursor/rules
-/AGENTS.md
 # END Skiller Generated Files

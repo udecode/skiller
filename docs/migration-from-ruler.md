@@ -4,7 +4,7 @@ Skiller is a fork of `intellectronica/ruler`.
 
 What changed:
 
-- Root folder is `.claude/` (not `.ruler/`)
-- Claude Code gets `CLAUDE.md` as `@file` references, not a concatenated blob
-- Skills are first-class: `.claude/skills/` is the committed source of truth
-- Claude plugins, commands, and agents can be synced into other agents' skills dirs on `skiller apply`
+- Write shared instructions in the repository root `AGENTS.md`; Skiller reads but never rewrites it
+- Keep Skiller configuration in `.agents/skiller.toml`
+- Keep canonical project skills in `.agents/skills/`; Skiller projects them to `.claude/skills/` for Claude Code
+- Keep Claude-specific settings, hooks, commands, and subagents under `.claude/`

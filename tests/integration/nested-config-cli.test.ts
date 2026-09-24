@@ -18,7 +18,7 @@ describe('CLI nested toggle precedence', () => {
     const rootSkillerDir = path.join(projectRoot, '.agents');
     await fs.mkdir(rootSkillerDir, { recursive: true });
     await fs.writeFile(
-      path.join(rootSkillerDir, 'AGENTS.md'),
+      path.join(projectRoot, 'AGENTS.md'),
       '# Root Rules\n\nThese apply at the root.',
     );
     await fs.writeFile(
@@ -30,7 +30,7 @@ describe('CLI nested toggle precedence', () => {
       const moduleDir = path.join(projectRoot, 'module');
       await fs.mkdir(path.join(moduleDir, '.agents'), { recursive: true });
       await fs.writeFile(
-        path.join(moduleDir, '.agents', 'AGENTS.md'),
+        path.join(moduleDir, 'AGENTS.md'),
         '# Module Rules\n\nThese apply inside module.',
       );
       // Create skiller.toml to make it a valid skiller directory
@@ -50,33 +50,30 @@ describe('CLI nested toggle precedence', () => {
   it('activates nested processing when config sets nested = true', async () => {
     await writeNestedProjectConfig({ nestedTomlValue: true });
 
-    runSkillerWithInheritedStdio('apply --agents claude-code', projectRoot);
+    runSkillerWithInheritedStdio('apply --agents cline', projectRoot);
 
     await expect(
-      fs.readFile(path.join(projectRoot, 'module', 'CLAUDE.md'), 'utf8'),
-    ).resolves.toContain('@.agents/AGENTS.md');
+      fs.readFile(path.join(projectRoot, 'module', '.clinerules'), 'utf8'),
+    ).resolves.toContain('# Module Rules');
   });
 
   it('remains flat when config sets nested = false and CLI omits --nested', async () => {
     await writeNestedProjectConfig({ nestedTomlValue: false });
 
-    runSkillerWithInheritedStdio('apply --agents claude-code', projectRoot);
+    runSkillerWithInheritedStdio('apply --agents cline', projectRoot);
 
     await expect(
-      fs.stat(path.join(projectRoot, 'module', 'CLAUDE.md')),
+      fs.stat(path.join(projectRoot, 'module', '.clinerules')),
     ).rejects.toThrow();
   });
 
   it('prefers CLI --nested over a config that sets nested = false', async () => {
     await writeNestedProjectConfig({ nestedTomlValue: false });
 
-    runSkillerWithInheritedStdio(
-      'apply --agents claude-code --nested',
-      projectRoot,
-    );
+    runSkillerWithInheritedStdio('apply --agents cline --nested', projectRoot);
 
     await expect(
-      fs.readFile(path.join(projectRoot, 'module', 'CLAUDE.md'), 'utf8'),
-    ).resolves.toContain('@.agents/AGENTS.md');
+      fs.readFile(path.join(projectRoot, 'module', '.clinerules'), 'utf8'),
+    ).resolves.toContain('# Module Rules');
   });
 });

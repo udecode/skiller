@@ -6,7 +6,6 @@ import { MergeStrategy } from '../types';
 import { MAX_RECURSION_DEPTH } from '../constants';
 import {
   CANONICAL_SKILLER_DIR,
-  LEGACY_INSTRUCTIONS_FILE,
   PROJECT_AGENTS_FILE,
   SKILLER_CONFIG_FILE,
 } from './project-paths';
@@ -223,12 +222,6 @@ export async function readMarkdownFiles(
       const relativePath = path.relative(skillerDir, file.path);
       const normalizedPath = relativePath.replace(/\\/g, '/');
 
-      // Always include AGENTS.md for backward compatibility
-      if (/^AGENTS\.md$/i.test(normalizedPath)) {
-        cursorFiles.push(file);
-        continue;
-      }
-
       // Check if file is in rules/ or skills/ folder and is .mdc
       if (
         (normalizedPath.startsWith('rules/') ||
@@ -252,41 +245,27 @@ export async function readMarkdownFiles(
     processedFiles = cursorFiles;
   }
 
-  // Prioritisation logic:
-  // 1. Prefer top-level AGENTS.md if present.
-  // 2. If AGENTS.md absent but legacy instructions.md present, use it (no longer emits a warning; legacy accepted silently).
-  // 3. Include any remaining .md files (excluding whichever of the above was used if present) in
-  //    sorted order AFTER the preferred primary file so that new concatenation priority starts with AGENTS.md.
-  const topLevelAgents = path.join(skillerDir, PROJECT_AGENTS_FILE);
-  const topLevelLegacy = path.join(skillerDir, LEGACY_INSTRUCTIONS_FILE);
+  const supplementalFiles = processedFiles
+    .filter((file) => file.path !== path.join(skillerDir, PROJECT_AGENTS_FILE))
+    .sort((a, b) => a.path.localeCompare(b.path));
 
-  // Separate primary candidates from others
-  let primaryFile: { path: string; content: string } | null = null;
-  const others: { path: string; content: string }[] = [];
+  if (path.basename(skillerDir) !== CANONICAL_SKILLER_DIR) {
+    return supplementalFiles;
+  }
 
-  for (const f of processedFiles) {
-    if (f.path === topLevelAgents) {
-      primaryFile = f; // Highest priority
+  const rootAgentsPath = path.join(
+    path.dirname(skillerDir),
+    PROJECT_AGENTS_FILE,
+  );
+  try {
+    const content = await fs.readFile(rootAgentsPath, 'utf8');
+    return [{ path: rootAgentsPath, content }, ...supplementalFiles];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return supplementalFiles;
     }
+    throw error;
   }
-  if (!primaryFile) {
-    for (const f of processedFiles) {
-      if (f.path === topLevelLegacy) {
-        primaryFile = f;
-        break;
-      }
-    }
-  }
-
-  for (const f of processedFiles) {
-    if (primaryFile && f.path === primaryFile.path) continue;
-    others.push(f);
-  }
-
-  // Sort the remaining others for stable deterministic concatenation order.
-  others.sort((a, b) => a.path.localeCompare(b.path));
-
-  return primaryFile ? [primaryFile, ...others] : others;
 }
 
 /**

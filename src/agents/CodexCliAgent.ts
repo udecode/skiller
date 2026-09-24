@@ -2,7 +2,6 @@ import * as path from 'path';
 import { promises as fs } from 'fs';
 import { parse as parseTOML, stringify } from '@iarna/toml';
 import { IAgent, IAgentConfig } from './IAgent';
-import { AgentsMdAgent } from './AgentsMdAgent';
 import { writeGeneratedFile } from '../core/FileSystemUtils';
 import { DEFAULT_RULES_FILENAME } from '../constants';
 import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
@@ -28,8 +27,6 @@ interface SkillerMcp {
  * OpenAI Codex CLI agent adapter.
  */
 export class CodexCliAgent implements IAgent {
-  private agentsMdAgent = new AgentsMdAgent();
-
   getIdentifier(): string {
     return 'codex';
   }
@@ -39,26 +36,11 @@ export class CodexCliAgent implements IAgent {
   }
 
   async applySkillerConfig(
-    concatenatedRules: string,
+    _concatenatedRules: string,
     projectRoot: string,
     skillerMcpJson: SkillerMcp | null,
     agentConfig?: IAgentConfig,
-    backup = true,
   ): Promise<void> {
-    // First perform idempotent AGENTS.md write via composed AgentsMdAgent
-    await this.agentsMdAgent.applySkillerConfig(
-      concatenatedRules,
-      projectRoot,
-      null,
-      {
-        // Preserve explicit outputPath precedence semantics if provided.
-        outputPath:
-          agentConfig?.outputPath ||
-          agentConfig?.outputPathInstructions ||
-          undefined,
-      },
-      backup,
-    );
     // Use proper path resolution from getDefaultOutputPath and agentConfig
     const defaults = this.getDefaultOutputPath(projectRoot);
     const mcpEnabled = agentConfig?.mcp?.enabled ?? true;

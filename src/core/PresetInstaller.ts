@@ -21,6 +21,9 @@ const PRESET_MANIFEST_RELATIVE_PATH = path
   .replace(/\\/g, '/');
 
 const HARD_DENY_PATTERNS = [
+  '.agents/AGENTS.md',
+  '.claude/AGENTS.md',
+  '.claude/CLAUDE.md',
   '.agents/skills/**',
   '.claude/skills/**',
   PRESET_MANIFEST_RELATIVE_PATH,
@@ -171,6 +174,7 @@ function isHardDenied(relativePath: string): boolean {
 
 function isPresetAllowlisted(relativePath: string): boolean {
   if (
+    relativePath === 'AGENTS.md' ||
     relativePath === 'skills-lock.json' ||
     relativePath === 'skiller-lock.json'
   ) {
@@ -224,7 +228,13 @@ async function readPresetConfig(presetRoot: string): Promise<PresetConfig> {
   };
 }
 
-function deriveTargetRelativePath(sourcePath: string): string | null {
+function deriveTargetRelativePath(
+  sourcePath: string,
+  presetRoot: string,
+): string | null {
+  if (path.relative(presetRoot, sourcePath) === 'AGENTS.md') {
+    return 'AGENTS.md';
+  }
   const segments = normalizeRelativePath(path.resolve(sourcePath)).split('/');
   const specialFileNames = new Set(['skills-lock.json', 'skiller-lock.json']);
 
@@ -400,10 +410,13 @@ export async function installPresetIntoProject(
     for (const includePath of presetConfig.include) {
       const resolvedIncludePath = path.resolve(presetRoot, includePath);
       const sourcePath = await collectFileFromPath(resolvedIncludePath);
-      const targetRelativePath = deriveTargetRelativePath(sourcePath);
+      const targetRelativePath = deriveTargetRelativePath(
+        sourcePath,
+        presetRoot,
+      );
       if (!targetRelativePath) {
         throw new Error(
-          `[skiller] Included path '${includePath}' in '${preset}/${PRESET_CONFIG_FILENAME}' must resolve under .agents, .claude, .codex, skills-lock.json, or skiller-lock.json.`,
+          `[skiller] Included path '${includePath}' in '${preset}/${PRESET_CONFIG_FILENAME}' must resolve under .agents, .claude, .codex, AGENTS.md, skills-lock.json, or skiller-lock.json.`,
         );
       }
 
