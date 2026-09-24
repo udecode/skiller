@@ -64,7 +64,7 @@ describe('apply-engine', () => {
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skiller-apply-engine-'));
-    skillerDir = path.join(tmpDir, '.claude');
+    skillerDir = path.join(tmpDir, '.agents');
     await fs.mkdir(skillerDir, { recursive: true });
   });
 
@@ -143,7 +143,7 @@ describe('apply-engine', () => {
       expect(configResult.skillerMcpJson).toBeNull();
     });
 
-    it('should throw error when .claude directory not found', async () => {
+    it('should throw error when .agents directory not found', async () => {
       const nonExistentDir = path.join(tmpDir, 'nonexistent');
 
       jest.spyOn(FileSystemUtils, 'findSkillerDir').mockResolvedValue(null);
@@ -151,7 +151,7 @@ describe('apply-engine', () => {
       try {
         await expect(
           loadSingleConfiguration(nonExistentDir, undefined, true),
-        ).rejects.toThrow('.claude directory not found');
+        ).rejects.toThrow('.agents directory not found');
       } finally {
         (FileSystemUtils.findSkillerDir as jest.Mock).mockRestore();
       }
@@ -163,24 +163,24 @@ describe('apply-engine', () => {
       const moduleDir = path.join(tmpDir, 'module');
       const submoduleDir = path.join(moduleDir, 'submodule');
 
-      const rootSkillerDir = path.join(tmpDir, '.claude');
-      const moduleSkillerDir = path.join(moduleDir, '.claude');
-      const submoduleSkillerDir = path.join(submoduleDir, '.claude');
+      const rootSkillerDir = path.join(tmpDir, '.agents');
+      const moduleSkillerDir = path.join(moduleDir, '.agents');
+      const submoduleSkillerDir = path.join(submoduleDir, '.agents');
 
       await fs.mkdir(rootSkillerDir, { recursive: true });
       await fs.mkdir(moduleSkillerDir, { recursive: true });
       await fs.mkdir(submoduleSkillerDir, { recursive: true });
 
       await fs.writeFile(
-        path.join(rootSkillerDir, 'AGENTS.md'),
+        path.join(path.dirname(rootSkillerDir), 'AGENTS.md'),
         '# Root Instructions',
       );
       await fs.writeFile(
-        path.join(moduleSkillerDir, 'AGENTS.md'),
+        path.join(path.dirname(moduleSkillerDir), 'AGENTS.md'),
         '# Module Instructions',
       );
       await fs.writeFile(
-        path.join(submoduleSkillerDir, 'AGENTS.md'),
+        path.join(path.dirname(submoduleSkillerDir), 'AGENTS.md'),
         '# Submodule Instructions',
       );
 
@@ -311,24 +311,24 @@ merge_strategy = "overwrite"
       const moduleDir = path.join(tmpDir, 'module');
       const submoduleDir = path.join(moduleDir, 'submodule');
 
-      const rootSkillerDir = path.join(tmpDir, '.claude');
-      const moduleSkillerDir = path.join(moduleDir, '.claude');
-      const submoduleSkillerDir = path.join(submoduleDir, '.claude');
+      const rootSkillerDir = path.join(tmpDir, '.agents');
+      const moduleSkillerDir = path.join(moduleDir, '.agents');
+      const submoduleSkillerDir = path.join(submoduleDir, '.agents');
 
       await fs.mkdir(rootSkillerDir, { recursive: true });
       await fs.mkdir(moduleSkillerDir, { recursive: true });
       await fs.mkdir(submoduleSkillerDir, { recursive: true });
 
       await fs.writeFile(
-        path.join(rootSkillerDir, 'AGENTS.md'),
+        path.join(path.dirname(rootSkillerDir), 'AGENTS.md'),
         '# Root Instructions',
       );
       await fs.writeFile(
-        path.join(moduleSkillerDir, 'AGENTS.md'),
+        path.join(path.dirname(moduleSkillerDir), 'AGENTS.md'),
         '# Module Instructions',
       );
       await fs.writeFile(
-        path.join(submoduleSkillerDir, 'AGENTS.md'),
+        path.join(path.dirname(submoduleSkillerDir), 'AGENTS.md'),
         '# Submodule Instructions',
       );
 
@@ -456,8 +456,8 @@ command = "sub-cmd"
 
   describe('processHierarchicalConfigurations', () => {
     it('passes each directory root and MCP bundle through to agent applications', async () => {
-      const rootSkillerDir = path.join(tmpDir, '.claude');
-      const nestedSkillerDir = path.join(tmpDir, 'nested', '.claude');
+      const rootSkillerDir = path.join(tmpDir, '.agents');
+      const nestedSkillerDir = path.join(tmpDir, 'nested', '.agents');
       await fs.mkdir(rootSkillerDir, { recursive: true });
       await fs.mkdir(nestedSkillerDir, { recursive: true });
 

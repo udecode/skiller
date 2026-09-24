@@ -4,7 +4,7 @@ import * as FileSystemUtils from './FileSystemUtils';
 import { matchesPattern, normalizePattern } from './FileSystemUtils';
 import { sha256, stableJson } from './hash';
 import { concatenateRules } from './RuleProcessor';
-import { CANONICAL_SKILLER_DIR } from './project-paths';
+import { CANONICAL_SKILLER_DIR, PROJECT_AGENTS_FILE } from './project-paths';
 import { loadRawConfig } from './ConfigLoader';
 import type {
   ConfigDiagnostic,
@@ -202,15 +202,21 @@ export async function loadUnifiedConfig(
       });
     }
 
-    // Sort lexicographically then ensure AGENTS.md first
-    mdFiles.sort((a, b) => a.localeCompare(b));
-    mdFiles.sort((a, b) => {
-      const aIs = /agents\.md$/i.test(a);
-      const bIs = /agents\.md$/i.test(b);
-      if (aIs && !bIs) return -1;
-      if (bIs && !aIs) return 1;
-      return 0;
-    });
+    mdFiles = mdFiles
+      .filter((file) => path.basename(file) !== PROJECT_AGENTS_FILE)
+      .sort((a, b) => a.localeCompare(b));
+    if (path.basename(meta.skillerDir) === CANONICAL_SKILLER_DIR) {
+      const rootAgentsPath = path.join(
+        path.dirname(meta.skillerDir),
+        PROJECT_AGENTS_FILE,
+      );
+      try {
+        await fs.access(rootAgentsPath);
+        mdFiles.unshift(rootAgentsPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
     let order = 0;
     ruleFiles = await Promise.all(
       mdFiles.map(async (file) => {
@@ -224,7 +230,7 @@ export async function loadUnifiedConfig(
           mtimeMs: stat.mtimeMs,
           size: stat.size,
           order: order++,
-          primary: /agents\.md$/i.test(file),
+          primary: path.basename(file) === PROJECT_AGENTS_FILE,
         } as RuleFile;
       }),
     );

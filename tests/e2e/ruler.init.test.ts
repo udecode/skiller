@@ -19,13 +19,13 @@ describe("End-to-End skiller init command", () => {
 		await teardownTestProject(testProject.projectRoot);
 	});
 
-	it("creates .claude directory and default files", async () => {
+	it("creates root instructions and .agents config", async () => {
 		const { projectRoot } = testProject;
 
 		runSkillerWithInheritedStdio("init", projectRoot);
 
-		const skillerDir = path.join(projectRoot, ".claude");
-		const instr = path.join(skillerDir, "AGENTS.md");
+		const skillerDir = path.join(projectRoot, ".agents");
+		const instr = path.join(projectRoot, "AGENTS.md");
 		const toml = path.join(skillerDir, "skiller.toml");
 		const mcpJson = path.join(skillerDir, "mcp.json");
 
@@ -44,8 +44,8 @@ describe("End-to-End skiller init command", () => {
 
 	it("does not overwrite existing files", async () => {
 		const { projectRoot } = testProject;
-		const skillerDir = path.join(projectRoot, ".claude");
-		const instr = path.join(skillerDir, "AGENTS.md");
+		const skillerDir = path.join(projectRoot, ".agents");
+		const instr = path.join(projectRoot, "AGENTS.md");
 		const toml = path.join(skillerDir, "skiller.toml");
 		// Prepopulate with markers
 		await fs.writeFile(instr, "KEEP");
@@ -55,15 +55,15 @@ describe("End-to-End skiller init command", () => {
 		expect(await fs.readFile(toml, "utf8")).toBe("KEEP");
 	});
 
-	it("creates AGENTS.md alongside legacy instructions.md if legacy exists", async () => {
+	it("creates root AGENTS.md even when supplemental instructions exist", async () => {
 		// create isolated new project root to not interfere with earlier tests
 		const { projectRoot } = await setupTestProject();
-		const skillerDir = path.join(projectRoot, ".claude");
+		const skillerDir = path.join(projectRoot, ".agents");
 		await fs.mkdir(skillerDir, { recursive: true });
 		const legacyPath = path.join(skillerDir, "instructions.md");
 		await fs.writeFile(legacyPath, "LEGACY");
 		await runSkillerWithInheritedStdio("init", projectRoot);
-		const newPath = path.join(skillerDir, "AGENTS.md");
+		const newPath = path.join(projectRoot, "AGENTS.md");
 		await expect(fs.readFile(legacyPath, "utf8")).resolves.toBe("LEGACY");
 		await expect(fs.readFile(newPath, "utf8")).resolves.toMatch(
 			/^# AGENTS\.md/,

@@ -34,7 +34,7 @@ describe('ClineAgent', () => {
 
   it('writes rules to .clinerules file', async () => {
     const { projectRoot } = await setupTestProject({
-      '.claude/AGENTS.md': 'Rule A',
+      'AGENTS.md': 'Rule A',
     });
     try {
       const agent = new ClineAgent();

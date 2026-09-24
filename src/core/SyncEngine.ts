@@ -11,6 +11,7 @@ const SYNC_MANIFEST_RELATIVE_PATH = path
   .replace(/\\/g, '/');
 
 const PRESET_ROOT_ALLOWLIST = new Set([
+  'AGENTS.md',
   '.agents',
   '.claude',
   '.codex',
@@ -21,6 +22,9 @@ const PRESET_ROOT_ALLOWLIST = new Set([
 const PRESET_ROOT_IGNORES = new Set(['.DS_Store', '.git', 'node_modules']);
 
 const HARD_DENY_PATTERNS = [
+  '.agents/AGENTS.md',
+  '.claude/AGENTS.md',
+  '.claude/CLAUDE.md',
   '.agents/skills/**',
   '.claude/skills/**',
   '.agents/.skiller-sync-manifest.json',
@@ -122,6 +126,7 @@ function isHardDenied(relativePath: string): boolean {
 
 function isPresetAllowlisted(relativePath: string): boolean {
   if (
+    relativePath === 'AGENTS.md' ||
     relativePath === 'skills-lock.json' ||
     relativePath === 'skiller-lock.json'
   ) {

@@ -18,11 +18,11 @@ describe('AugmentCodeAgent', () => {
 
   describe('agent properties', () => {
     it('returns correct identifier', () => {
-      expect(agent.getIdentifier()).toBe('augmentcode');
+      expect(agent.getIdentifier()).toBe('augment');
     });
 
     it('returns correct name', () => {
-      expect(agent.getName()).toBe('AugmentCode');
+      expect(agent.getName()).toBe('Augment');
     });
 
     it('returns correct default output path', () => {

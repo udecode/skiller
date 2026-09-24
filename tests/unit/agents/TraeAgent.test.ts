@@ -22,7 +22,7 @@ describe('TraeAgent', () => {
     });
 
     it('returns correct name', () => {
-      expect(agent.getName()).toBe('Trae AI');
+      expect(agent.getName()).toBe('Trae');
     });
 
     it('returns correct default output path', () => {

@@ -4,7 +4,6 @@ import * as yaml from 'js-yaml';
 import {
   CANONICAL_SKILLER_DIR,
   LEGACY_SKILLER_DIR,
-  PROJECT_AGENTS_FILE,
   SKILLER_CONFIG_FILE,
 } from './project-paths';
 import { parseFrontmatter } from './FrontmatterParser';
@@ -232,28 +231,6 @@ async function planBufferWrite(
     return;
   } catch {
     plannedWrites.set(destinationPath, content);
-  }
-}
-
-async function planFileMigration(
-  sourcePath: string,
-  destinationPath: string,
-  plannedWrites: Map<string, Buffer>,
-  deletePaths: Set<string>,
-  conflicts: string[],
-): Promise<void> {
-  if (!(await pathExists(sourcePath))) return;
-
-  await planBufferWrite(
-    destinationPath,
-    await fs.readFile(sourcePath),
-    sourcePath,
-    plannedWrites,
-    conflicts,
-  );
-
-  if (conflicts.length === 0) {
-    deletePaths.add(sourcePath);
   }
 }
 
@@ -532,13 +509,6 @@ export async function migrateLegacyProjectState(
       deletePaths.add(legacyConfigPath);
     }
   }
-  await planFileMigration(
-    path.join(legacyDir, PROJECT_AGENTS_FILE),
-    path.join(canonicalDir, PROJECT_AGENTS_FILE),
-    plannedWrites,
-    deletePaths,
-    conflicts,
-  );
   if (!(await pathExists(canonicalSkillsDir))) {
     await planLegacySkillsMigration(
       path.join(legacyDir, 'skills'),

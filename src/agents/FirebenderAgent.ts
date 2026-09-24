@@ -6,7 +6,6 @@ import {
   writeGeneratedFile,
   ensureDirExists,
 } from '../core/FileSystemUtils';
-import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
  * Firebender rule configuration object.
@@ -47,7 +46,7 @@ export class FirebenderAgent implements IAgent {
   }
 
   getName(): string {
-    return getAgentDisplayName('firebender');
+    return 'Firebender';
   }
 
   async applySkillerConfig(
@@ -234,7 +233,7 @@ export class FirebenderAgent implements IAgent {
   }
 
   getSkillsPath(projectRoot: string): string | null {
-    return getAgentSkillsPath('firebender', projectRoot);
+    return path.join(projectRoot, '.agents', 'skills');
   }
 
   /**

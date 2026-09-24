@@ -19,11 +19,6 @@ export class GeminiCliAgent extends AgentsMdAgent {
     skillerMcpJson: Record<string, unknown> | null,
     agentConfig?: IAgentConfig,
   ): Promise<void> {
-    // First, perform idempotent write of AGENTS.md via base class
-    await super.applySkillerConfig(concatenatedRules, projectRoot, null, {
-      outputPath: agentConfig?.outputPath,
-    });
-
     // Prepare .gemini/settings.json with contextFileName and MCP configuration
     const settingsPath = path.join(projectRoot, '.gemini', 'settings.json');
     let existingSettings: Record<string, unknown> = {};

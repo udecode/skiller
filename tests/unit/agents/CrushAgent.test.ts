@@ -184,7 +184,7 @@ describe('CrushAgent', () => {
       testAgent = new CrushAgent();
 
       // Create .claude directory for revert functionality
-      const skillerDir = path.join(tmpDir, '.claude');
+      const skillerDir = path.join(tmpDir, '.agents');
       await fs.mkdir(skillerDir, { recursive: true });
       // Create skiller.toml to make it a valid skiller directory
       await fs.writeFile(path.join(skillerDir, 'skiller.toml'), '');

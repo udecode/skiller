@@ -42,7 +42,10 @@ describe('OpenCodeAgent', () => {
 
     await agent.applySkillerConfig('rules', '/root', null);
 
-    expect(mockedFs.writeFile).toHaveBeenCalledWith('/root/AGENTS.md', 'rules');
+    expect(mockedFs.writeFile).not.toHaveBeenCalledWith(
+      '/root/AGENTS.md',
+      'rules',
+    );
     expect(mockedFs.writeFile).toHaveBeenCalledWith(
       '/root/opencode.json',
       JSON.stringify(
@@ -70,7 +73,10 @@ describe('OpenCodeAgent', () => {
 
     await agent.applySkillerConfig('rules', '/root', mcpConfig);
 
-    expect(mockedFs.writeFile).toHaveBeenCalledWith('/root/AGENTS.md', 'rules');
+    expect(mockedFs.writeFile).not.toHaveBeenCalledWith(
+      '/root/AGENTS.md',
+      'rules',
+    );
     expect(mockedFs.writeFile).toHaveBeenCalledWith(
       '/root/opencode.json',
       JSON.stringify(
@@ -106,7 +112,10 @@ describe('OpenCodeAgent', () => {
       outputPathConfig: 'custom-opencode.json',
     });
 
-    expect(mockedFs.writeFile).toHaveBeenCalledWith('/root/CUSTOM.md', 'rules');
+    expect(mockedFs.writeFile).not.toHaveBeenCalledWith(
+      '/root/CUSTOM.md',
+      'rules',
+    );
     expect(mockedFs.writeFile).toHaveBeenCalledWith(
       '/root/custom-opencode.json',
       JSON.stringify(

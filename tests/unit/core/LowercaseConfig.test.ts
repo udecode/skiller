@@ -13,7 +13,7 @@ describe('Lowercase Configuration Support', () => {
     );
 
     // Create .claude directory
-    const skillerDir = path.join(tmpDir, '.claude');
+    const skillerDir = path.join(tmpDir, '.agents');
     await fs.mkdir(skillerDir, { recursive: true });
 
     // Create a basic instructions file
@@ -38,7 +38,7 @@ enabled = true
 enabled = false
 `;
 
-    const configPath = path.join(tmpDir, '.claude', 'skiller.toml');
+    const configPath = path.join(tmpDir, '.agents', 'skiller.toml');
     await fs.writeFile(configPath, configContent);
 
     const config = await loadConfig({
@@ -80,7 +80,7 @@ enabled = false
 enabled = true
 `;
 
-    const configPath = path.join(tmpDir, '.claude', 'skiller.toml');
+    const configPath = path.join(tmpDir, '.agents', 'skiller.toml');
     await fs.writeFile(configPath, configContent);
 
     const config = await loadConfig({
@@ -107,7 +107,7 @@ output_path_instructions = "custom_codex.md"
 output_path_config = "custom_codex.toml"
 `;
 
-    const configPath = path.join(tmpDir, '.claude', 'skiller.toml');
+    const configPath = path.join(tmpDir, '.agents', 'skiller.toml');
     await fs.writeFile(configPath, configContent);
 
     const config = await loadConfig({

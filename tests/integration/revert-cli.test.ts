@@ -1,223 +1,231 @@
-import * as fs from "fs/promises";
-import * as fsSync from "fs";
-import * as path from "path";
-import * as os from "os";
-import { execSync } from "child_process";
+import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { execSync } from 'child_process';
 
-describe("Revert CLI Integration", () => {
-	let tmpDir: string;
+describe('Revert CLI Integration', () => {
+  let tmpDir: string;
 
-	beforeEach(async () => {
-		tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-cli-integration-"));
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'skiller-cli-integration-'),
+    );
 
-		const skillerDir = path.join(tmpDir, ".claude");
-		await fs.mkdir(skillerDir, { recursive: true });
-		// Create skiller.toml to make it a valid skiller directory
-		await fs.writeFile(path.join(skillerDir, "skiller.toml"), "");
-		await fs.writeFile(path.join(skillerDir, "instructions.md"), "Test Rule");
-	});
+    const skillerDir = path.join(tmpDir, '.agents');
+    await fs.mkdir(skillerDir, { recursive: true });
+    // Create skiller.toml to make it a valid skiller directory
+    await fs.writeFile(path.join(skillerDir, 'skiller.toml'), '');
+    await fs.writeFile(path.join(skillerDir, 'instructions.md'), 'Test Rule');
+    await fs.writeFile(path.join(tmpDir, 'AGENTS.md'), 'Authored instructions');
+  });
 
-	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
-	});
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
 
-	describe("CLI Command Structure", () => {
-		it("should show help for revert command", () => {
-			const output = execSync(`node dist/cli/index.js revert --help`, {
-				encoding: "utf8",
-				stdio: "pipe",
-			});
+  describe('CLI Command Structure', () => {
+    it('should show help for revert command', () => {
+      const output = execSync(`node dist/cli/index.js revert --help`, {
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
 
-			expect(output).toContain("Revert skiller configurations");
-			expect(output).toContain("--project-root");
-			expect(output).toContain("--agents");
-			expect(output).toContain("--config");
-			expect(output).toContain("--keep-backups");
-			expect(output).toContain("--verbose");
-			expect(output).toContain("--dry-run");
-			expect(output).toContain("--local-only");
-		});
+      expect(output).toContain('Revert skiller configurations');
+      expect(output).toContain('--project-root');
+      expect(output).toContain('--agents');
+      expect(output).toContain('--config');
+      expect(output).toContain('--keep-backups');
+      expect(output).toContain('--verbose');
+      expect(output).toContain('--dry-run');
+      expect(output).toContain('--local-only');
+    });
 
-		it("should handle missing .claude directory with proper error", () => {
-			const emptyDir = path.join(os.tmpdir(), "empty-" + Date.now());
+    it('should handle missing .agents directory with proper error', () => {
+      const emptyDir = path.join(os.tmpdir(), 'empty-' + Date.now());
 
-			expect(() => {
-				execSync(
-					`node dist/cli/index.js revert --project-root ${emptyDir} --local-only`,
-					{ stdio: "pipe" },
-				);
-			}).toThrow();
-		});
-	});
+      expect(() => {
+        execSync(
+          `node dist/cli/index.js revert --project-root ${emptyDir} --local-only`,
+          { stdio: 'pipe' },
+        );
+      }).toThrow();
+    });
+  });
 
-	describe("CLI Options", () => {
-		it("should handle --project-root option", () => {
-			const testFile = path.join(tmpDir, "CLAUDE.md");
-			fsSync.writeFileSync(testFile, "test content");
+  describe('CLI Options', () => {
+    it('should handle --project-root option', () => {
+      const testFile = path.join(tmpDir, '.clinerules');
+      fsSync.writeFileSync(testFile, 'test content');
 
-			const output = execSync(
-				`node dist/cli/index.js revert --project-root ${tmpDir} --dry-run`,
-				{
-					encoding: "utf8",
-					stdio: "pipe",
-				},
-			);
+      const output = execSync(
+        `node dist/cli/index.js revert --project-root ${tmpDir} --dry-run`,
+        {
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
 
-			expect(output).toContain("[skiller:dry-run]");
-			expect(output).toContain("Revert summary (dry run)");
-		});
+      expect(output).toContain('[skiller:dry-run]');
+      expect(output).toContain('Revert summary (dry run)');
+    });
 
-		it("should handle --agents option", () => {
-			fsSync.writeFileSync(path.join(tmpDir, "CLAUDE.md"), "claude content");
-			fsSync.writeFileSync(path.join(tmpDir, "AGENTS.md"), "agents content");
+    it('should handle --agents option', () => {
+      fsSync.writeFileSync(path.join(tmpDir, '.clinerules'), 'cline content');
 
-			const output = execSync(
-				`node dist/cli/index.js revert --project-root ${tmpDir} --agents claude --dry-run`,
-				{
-					encoding: "utf8",
-					stdio: "pipe",
-				},
-			);
+      const output = execSync(
+        `node dist/cli/index.js revert --project-root ${tmpDir} --agents cline --dry-run`,
+        {
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
 
-			expect(output).toContain("Reverting Claude Code");
-			expect(output).not.toContain("Reverting OpenAI Codex CLI");
-		});
+      expect(output).toContain('Reverting Cline');
+      expect(output).not.toContain('Reverting OpenAI Codex CLI');
+    });
 
-		it("should handle --keep-backups option", async () => {
-			const filePath = path.join(tmpDir, "CLAUDE.md");
-			const backupPath = `${filePath}.bak`;
+    it('should handle --keep-backups option', async () => {
+      const filePath = path.join(tmpDir, '.clinerules');
+      const backupPath = `${filePath}.bak`;
 
-			await fs.writeFile(backupPath, "original");
-			await fs.writeFile(filePath, "modified");
+      await fs.writeFile(backupPath, 'original');
+      await fs.writeFile(filePath, 'modified');
 
-			execSync(
-				`node dist/cli/index.js revert --project-root ${tmpDir} --keep-backups`,
-				{
-					stdio: "inherit",
-				},
-			);
+      execSync(
+        `node dist/cli/index.js revert --project-root ${tmpDir} --keep-backups`,
+        {
+          stdio: 'inherit',
+        },
+      );
 
-			await expect(fs.access(backupPath)).resolves.toBeUndefined();
-		});
+      await expect(fs.access(backupPath)).resolves.toBeUndefined();
+    });
 
-		it("should handle --verbose option", () => {
-			const output = execSync(
-				`node dist/cli/index.js revert --project-root ${tmpDir} --verbose --dry-run`,
-				{
-					encoding: "utf8",
-					stdio: "pipe",
-				},
-			);
+    it('should handle --verbose option', () => {
+      const output = execSync(
+        `node dist/cli/index.js revert --project-root ${tmpDir} --verbose --dry-run`,
+        {
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
 
-			expect(output.length).toBeGreaterThan(100);
-			expect(output).toContain("[skiller:dry-run]");
-		});
+      expect(output.length).toBeGreaterThan(100);
+      expect(output).toContain('[skiller:dry-run]');
+    });
 
-		it("should handle --dry-run option", async () => {
-			const testFile = path.join(tmpDir, "CLAUDE.md");
-			await fs.writeFile(testFile, "test content");
+    it('should handle --dry-run option', async () => {
+      const testFile = path.join(tmpDir, '.clinerules');
+      await fs.writeFile(testFile, 'test content');
 
-			const output = execSync(
-				`node dist/cli/index.js revert --project-root ${tmpDir} --dry-run`,
-				{
-					encoding: "utf8",
-					stdio: "pipe",
-				},
-			);
+      const output = execSync(
+        `node dist/cli/index.js revert --project-root ${tmpDir} --dry-run`,
+        {
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
 
-			expect(output).toContain("[skiller:dry-run]");
-			expect(output).toContain("Revert summary (dry run)");
+      expect(output).toContain('[skiller:dry-run]');
+      expect(output).toContain('Revert summary (dry run)');
 
-			await expect(fs.access(testFile)).resolves.toBeUndefined();
-		});
+      await expect(fs.access(testFile)).resolves.toBeUndefined();
+    });
 
-		it("should handle --local-only option", () => {
-			const output = execSync(
-				`node dist/cli/index.js revert --project-root ${tmpDir} --local-only --dry-run`,
-				{
-					encoding: "utf8",
-					stdio: "pipe",
-				},
-			);
+    it('should handle --local-only option', () => {
+      const output = execSync(
+        `node dist/cli/index.js revert --project-root ${tmpDir} --local-only --dry-run`,
+        {
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
 
-			expect(output).toContain("[skiller:dry-run]");
-		});
-	});
+      expect(output).toContain('[skiller:dry-run]');
+    });
+  });
 
-	describe("Error Handling", () => {
-		it("should handle invalid project root", () => {
-			expect(() => {
-				execSync(
-					`node dist/cli/index.js revert --project-root /nonexistent/path --local-only`,
-					{ stdio: "pipe" },
-				);
-			}).toThrow();
-		});
+  describe('Error Handling', () => {
+    it('should handle invalid project root', () => {
+      expect(() => {
+        execSync(
+          `node dist/cli/index.js revert --project-root /nonexistent/path --local-only`,
+          { stdio: 'pipe' },
+        );
+      }).toThrow();
+    });
 
-		it("should handle invalid agents list gracefully", () => {
-			const output = execSync(
-				`node dist/cli/index.js revert --project-root ${tmpDir} --agents invalid-agent --dry-run`,
-				{
-					encoding: "utf8",
-					stdio: "pipe",
-				},
-			);
+    it('should handle invalid agents list gracefully', () => {
+      const output = execSync(
+        `node dist/cli/index.js revert --project-root ${tmpDir} --agents invalid-agent --dry-run`,
+        {
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
 
-			expect(output).toContain("[skiller:dry-run]");
-		});
-	});
+      expect(output).toContain('[skiller:dry-run]');
+    });
+  });
 
-	describe("Output Format", () => {
-		it("should provide structured output for dry-run", () => {
-			const output = execSync(
-				`node dist/cli/index.js revert --project-root ${tmpDir} --dry-run`,
-				{
-					encoding: "utf8",
-					stdio: "pipe",
-				},
-			);
+  describe('Output Format', () => {
+    it('should provide structured output for dry-run', () => {
+      const output = execSync(
+        `node dist/cli/index.js revert --project-root ${tmpDir} --dry-run`,
+        {
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
 
-			expect(output).toContain("Revert summary (dry run):");
-			expect(output).toContain("Files processed:");
-			expect(output).toContain("Files restored from backup:");
-			expect(output).toContain("Generated files removed:");
-		});
+      expect(output).toContain('Revert summary (dry run):');
+      expect(output).toContain('Files processed:');
+      expect(output).toContain('Files restored from backup:');
+      expect(output).toContain('Generated files removed:');
+    });
 
-		it("should provide structured output for actual revert", () => {
-			const output = execSync(
-				`node dist/cli/index.js revert --project-root ${tmpDir}`,
-				{
-					encoding: "utf8",
-					stdio: "pipe",
-				},
-			);
+    it('should provide structured output for actual revert', () => {
+      const output = execSync(
+        `node dist/cli/index.js revert --project-root ${tmpDir}`,
+        {
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
 
-			expect(output).toContain("Revert completed successfully");
-			expect(output).toContain("Files processed:");
-			expect(output).toContain("Files restored from backup:");
-			expect(output).toContain("Generated files removed:");
-		});
-	});
+      expect(output).toContain('Revert completed successfully');
+      expect(output).toContain('Files processed:');
+      expect(output).toContain('Files restored from backup:');
+      expect(output).toContain('Generated files removed:');
+    });
+  });
 
-	describe("Integration with Apply", () => {
-		it("should revert everything that apply creates", async () => {
-			execSync(`node dist/cli/index.js apply --project-root ${tmpDir}`, {
-				stdio: "inherit",
-			});
+  describe('Integration with Apply', () => {
+    it('should revert everything that apply creates', async () => {
+      execSync(`node dist/cli/index.js apply --project-root ${tmpDir}`, {
+        stdio: 'inherit',
+      });
 
-			await expect(
-				fs.access(path.join(tmpDir, "CLAUDE.md")),
-			).resolves.toBeUndefined();
-			await expect(
-				fs.access(path.join(tmpDir, "AGENTS.md")),
-			).resolves.toBeUndefined();
+      await expect(fs.access(path.join(tmpDir, 'CLAUDE.md'))).rejects.toThrow();
+      await expect(
+        fs.access(path.join(tmpDir, 'AGENTS.md')),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(path.join(tmpDir, '.clinerules')),
+      ).resolves.toBeUndefined();
 
-			execSync(`node dist/cli/index.js revert --project-root ${tmpDir}`, {
-				stdio: "inherit",
-			});
+      execSync(`node dist/cli/index.js revert --project-root ${tmpDir}`, {
+        stdio: 'inherit',
+      });
 
-			await expect(fs.access(path.join(tmpDir, "CLAUDE.md"))).rejects.toThrow();
-			await expect(fs.access(path.join(tmpDir, "AGENTS.md"))).rejects.toThrow();
-		});
-	});
+      await expect(fs.access(path.join(tmpDir, 'CLAUDE.md'))).rejects.toThrow();
+      await expect(
+        fs.access(path.join(tmpDir, '.clinerules')),
+      ).rejects.toThrow();
+      await expect(
+        fs.access(path.join(tmpDir, 'AGENTS.md')),
+      ).resolves.toBeUndefined();
+    });
+  });
 });

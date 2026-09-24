@@ -51,7 +51,7 @@ Debug carefully.
     );
 
     writeFile(
-      path.join(sourceRoot, 'presets', 'default', '.agents', 'AGENTS.md'),
+      path.join(sourceRoot, 'presets', 'default', 'AGENTS.md'),
       '# Preset\n',
     );
     writeFile(
@@ -109,9 +109,12 @@ include = [
     );
 
     expect(output).toContain("Materialized preset 'default'");
-    expect(
-      fs.existsSync(path.join(projectRoot, '.claude', 'prompt.yml')),
-    ).toBe(true);
+    expect(fs.readFileSync(path.join(projectRoot, 'AGENTS.md'), 'utf8')).toBe(
+      '# Preset\n',
+    );
+    expect(fs.existsSync(path.join(projectRoot, '.claude', 'prompt.yml'))).toBe(
+      true,
+    );
     expect(
       fs.readFileSync(path.join(projectRoot, '.claude', 'prompt.yml'), 'utf8'),
     ).toBe('hooks: []\n');
@@ -150,11 +153,7 @@ include = [
 
     writeFile(
       path.join(projectRoot, 'package.json'),
-      JSON.stringify(
-        { name: 'preset-refresh-test', private: true },
-        null,
-        2,
-      ),
+      JSON.stringify({ name: 'preset-refresh-test', private: true }, null, 2),
     );
     writeFile(path.join(projectRoot, '.agents', 'AGENTS.md'), '# Local\n');
     writeFile(path.join(projectRoot, '.agents', 'skiller.toml'), '');

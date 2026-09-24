@@ -1,6 +1,5 @@
 import * as path from 'path';
 import { IAgent, IAgentConfig } from './IAgent';
-import { AgentsMdAgent } from './AgentsMdAgent';
 import { backupFile, writeGeneratedFile } from '../core/FileSystemUtils';
 import * as fs from 'fs/promises';
 import * as yaml from 'js-yaml';
@@ -9,7 +8,6 @@ import * as yaml from 'js-yaml';
  * Aider agent adapter that uses AGENTS.md for instructions and .aider.conf.yml for configuration.
  */
 export class AiderAgent implements IAgent {
-  private agentsMdAgent = new AgentsMdAgent();
   getIdentifier(): string {
     return 'aider';
   }
@@ -19,27 +17,12 @@ export class AiderAgent implements IAgent {
   }
 
   async applySkillerConfig(
-    concatenatedRules: string,
+    _concatenatedRules: string,
     projectRoot: string,
     skillerMcpJson: Record<string, unknown> | null,
     agentConfig?: IAgentConfig,
     backup = true,
   ): Promise<void> {
-    // First perform idempotent AGENTS.md write via composed AgentsMdAgent
-    await this.agentsMdAgent.applySkillerConfig(
-      concatenatedRules,
-      projectRoot,
-      null,
-      {
-        // Preserve explicit outputPath precedence semantics if provided.
-        outputPath:
-          agentConfig?.outputPath ||
-          agentConfig?.outputPathInstructions ||
-          undefined,
-      },
-      backup,
-    );
-
     // Now handle .aider.conf.yml configuration
     const cfgPath =
       agentConfig?.outputPathConfig ??

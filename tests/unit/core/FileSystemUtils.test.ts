@@ -1,85 +1,90 @@
-import * as fs from "fs/promises";
-import os from "os";
-import * as path from "path";
+import * as fs from 'fs/promises';
+import os from 'os';
+import * as path from 'path';
 import {
-	findSkillerDir,
-	readMarkdownFiles,
-} from "../../../src/core/FileSystemUtils";
+  findSkillerDir,
+  readMarkdownFiles,
+} from '../../../src/core/FileSystemUtils';
 
-describe("FileSystemUtils", () => {
-	let tmpDir: string;
-	beforeAll(async () => {
-		tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-test-"));
-	});
-	afterAll(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
-	});
+describe('FileSystemUtils', () => {
+  let tmpDir: string;
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skiller-test-'));
+  });
+  afterAll(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
 
-	describe("findSkillerDir", () => {
-		it("finds .agents in parent directories", async () => {
-			const projectDir = path.join(tmpDir, "project");
-			const skillerDir = path.join(projectDir, ".agents");
-			const nestedDir = path.join(projectDir, "sub", "child");
-			await fs.mkdir(skillerDir, { recursive: true });
-			await fs.mkdir(nestedDir, { recursive: true });
-			// Create skiller.toml to make it a valid skiller directory
-			await fs.writeFile(path.join(skillerDir, "skiller.toml"), "");
-			const found = await findSkillerDir(nestedDir);
-			expect(found).toBe(skillerDir);
-		});
+  describe('findSkillerDir', () => {
+    it('finds .agents in parent directories', async () => {
+      const projectDir = path.join(tmpDir, 'project');
+      const skillerDir = path.join(projectDir, '.agents');
+      const nestedDir = path.join(projectDir, 'sub', 'child');
+      await fs.mkdir(skillerDir, { recursive: true });
+      await fs.mkdir(nestedDir, { recursive: true });
+      // Create skiller.toml to make it a valid skiller directory
+      await fs.writeFile(path.join(skillerDir, 'skiller.toml'), '');
+      const found = await findSkillerDir(nestedDir);
+      expect(found).toBe(skillerDir);
+    });
 
-		it("ignores legacy .claude directories when .agents is not found", async () => {
-			const projectDir = path.join(tmpDir, "legacy-only");
-			const legacyDir = path.join(projectDir, ".claude");
-			const nestedDir = path.join(projectDir, "sub", "child");
-			await fs.mkdir(legacyDir, { recursive: true });
-			await fs.mkdir(nestedDir, { recursive: true });
-			await fs.writeFile(path.join(legacyDir, "skiller.toml"), "");
-			const found = await findSkillerDir(nestedDir, false);
-			expect(found).toBeNull();
-		});
+    it('ignores legacy .claude directories when .agents is not found', async () => {
+      const projectDir = path.join(tmpDir, 'legacy-only');
+      const legacyDir = path.join(projectDir, '.claude');
+      const nestedDir = path.join(projectDir, 'sub', 'child');
+      await fs.mkdir(legacyDir, { recursive: true });
+      await fs.mkdir(nestedDir, { recursive: true });
+      await fs.writeFile(path.join(legacyDir, 'skiller.toml'), '');
+      const found = await findSkillerDir(nestedDir, false);
+      expect(found).toBeNull();
+    });
 
-		it("returns null if .agents is not found", async () => {
-			const someDir = path.join(tmpDir, "nofile");
-			await fs.mkdir(someDir, { recursive: true });
-			const found = await findSkillerDir(someDir, false); // Don't check global config
-			expect(found).toBeNull();
-		});
-	});
+    it('returns null if .agents is not found', async () => {
+      const someDir = path.join(tmpDir, 'nofile');
+      await fs.mkdir(someDir, { recursive: true });
+      const found = await findSkillerDir(someDir, false); // Don't check global config
+      expect(found).toBeNull();
+    });
+  });
 
-	describe("readMarkdownFiles", () => {
-		it("reads and sorts markdown files", async () => {
-			const skillerDir = path.join(tmpDir, ".agents2");
-			const subDir = path.join(skillerDir, "sub");
-			await fs.mkdir(subDir, { recursive: true });
-			const fileA = path.join(skillerDir, "a.md");
-			const fileB = path.join(subDir, "b.md");
-			await fs.writeFile(fileA, "contentA");
-			await fs.writeFile(fileB, "contentB");
-			const files = await readMarkdownFiles(skillerDir);
-			expect(files.map((f) => f.path)).toEqual([fileA, fileB]);
-			expect(files[0].content).toBe("contentA");
-			expect(files[1].content).toBe("contentB");
-		});
+  describe('readMarkdownFiles', () => {
+    it('reads and sorts markdown files', async () => {
+      const skillerDir = path.join(tmpDir, '.agents2');
+      const subDir = path.join(skillerDir, 'sub');
+      await fs.mkdir(subDir, { recursive: true });
+      const fileA = path.join(skillerDir, 'a.md');
+      const fileB = path.join(subDir, 'b.md');
+      await fs.writeFile(fileA, 'contentA');
+      await fs.writeFile(fileB, 'contentB');
+      const files = await readMarkdownFiles(skillerDir);
+      expect(files.map((f) => f.path)).toEqual([fileA, fileB]);
+      expect(files[0].content).toBe('contentA');
+      expect(files[1].content).toBe('contentB');
+    });
 
-		it("prefers authored .agents/AGENTS.md and does not prepend root generated AGENTS.md", async () => {
-			const projectDir = path.join(tmpDir, "generated-root");
-			const skillerDir = path.join(projectDir, ".agents");
-			await fs.mkdir(skillerDir, { recursive: true });
+    it('reads authored root AGENTS.md first and ignores .agents/AGENTS.md', async () => {
+      const projectDir = path.join(tmpDir, 'generated-root');
+      const skillerDir = path.join(projectDir, '.agents');
+      await fs.mkdir(skillerDir, { recursive: true });
 
-			const rootAgents = path.join(projectDir, "AGENTS.md");
-			const sourceAgents = path.join(skillerDir, "AGENTS.md");
-			const extraFile = path.join(skillerDir, "extra.md");
+      const rootAgents = path.join(projectDir, 'AGENTS.md');
+      const sourceAgents = path.join(skillerDir, 'AGENTS.md');
+      const extraFile = path.join(skillerDir, 'extra.md');
+      const nestedAgents = path.join(skillerDir, 'rules', 'AGENTS.md');
 
-			await fs.writeFile(
-				rootAgents,
-				"<!-- Generated by Skiller -->\n# Generated Root\n",
-			);
-			await fs.writeFile(sourceAgents, "# Authored Source\n");
-			await fs.writeFile(extraFile, "# Extra\n");
+      await fs.mkdir(path.dirname(nestedAgents), { recursive: true });
+      await fs.writeFile(rootAgents, '# Authored Root\n');
+      await fs.writeFile(sourceAgents, '# Authored Source\n');
+      await fs.writeFile(extraFile, '# Extra\n');
+      await fs.writeFile(nestedAgents, '# Nested\n');
 
-			const files = await readMarkdownFiles(skillerDir);
-			expect(files.map((f) => f.path)).toEqual([sourceAgents, extraFile]);
-		});
-	});
+      const files = await readMarkdownFiles(skillerDir);
+      expect(files.map((f) => f.path)).toEqual([
+        rootAgents,
+        extraFile,
+        nestedAgents,
+      ]);
+      expect(files[0].content).toBe('# Authored Root\n');
+    });
+  });
 });

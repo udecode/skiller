@@ -821,7 +821,9 @@ export async function initHandler(argv: InitArgs): Promise<void> {
       )
     : path.join(projectRoot, CANONICAL_SKILLER_DIR);
   await fs.mkdir(skillerDir, { recursive: true });
-  const instructionsPath = path.join(skillerDir, DEFAULT_RULES_FILENAME);
+  const instructionsPath = isGlobal
+    ? path.join(skillerDir, DEFAULT_RULES_FILENAME)
+    : path.join(projectRoot, DEFAULT_RULES_FILENAME);
   const tomlPath = path.join(skillerDir, SKILLER_CONFIG_FILE);
   const exists = async (p: string) => {
     try {
@@ -831,7 +833,7 @@ export async function initHandler(argv: InitArgs): Promise<void> {
       return false;
     }
   };
-  const DEFAULT_INSTRUCTIONS = `# AGENTS.md\n\nCentralised AI agent instructions. Add coding guidelines, style guides, and project context here.\n\nSkiller concatenates all .md files in this directory (and subdirectories), starting with AGENTS.md (if present), then remaining files in sorted order.\n`;
+  const DEFAULT_INSTRUCTIONS = `# AGENTS.md\n\nShared AI agent instructions. Add coding guidelines, style guides, and project context here.\n`;
   const DEFAULT_TOML = `# Skiller Configuration File
 # See https://github.com/udecode/skiller for documentation.
 
@@ -851,10 +853,6 @@ export async function initHandler(argv: InitArgs): Promise<void> {
 # enabled = true
 # output_path = ".github/copilot-instructions.md"
 
-# [agents.claude-code]
-# enabled = true
-# output_path = "CLAUDE.md"
-
 # [agents.gemini-cli]
 # enabled = true
 
@@ -873,7 +871,6 @@ export async function initHandler(argv: InitArgs): Promise<void> {
 # headers = { Authorization = "Bearer REPLACE_ME" }
 `;
   if (!(await exists(instructionsPath))) {
-    // Create new AGENTS.md regardless of legacy presence.
     await fs.writeFile(instructionsPath, DEFAULT_INSTRUCTIONS);
     console.log(`[skiller] Created ${instructionsPath}`);
   } else {

@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { IAgent, IAgentConfig } from './IAgent';
 
 /**
@@ -10,17 +11,23 @@ export function getAgentOutputPaths(
 ): string[] {
   const paths: string[] = [];
   const defaults = agent.getDefaultOutputPath(projectRoot);
+  const rootAgentsPath = path.resolve(projectRoot, 'AGENTS.md');
+  const authoredInstructions = (candidate: string): boolean =>
+    path.resolve(candidate) === rootAgentsPath;
 
   if (typeof defaults === 'string') {
     // Single output path (most agents)
     const actualPath = agentConfig?.outputPath ?? defaults;
-    paths.push(actualPath);
+    if (!authoredInstructions(defaults)) paths.push(actualPath);
   } else {
     // Multiple output paths (e.g., AiderAgent)
     const defaultPaths = defaults as Record<string, string>;
 
     // Handle instructions path
-    if ('instructions' in defaultPaths) {
+    if (
+      'instructions' in defaultPaths &&
+      !authoredInstructions(defaultPaths.instructions)
+    ) {
       const instructionsPath =
         agentConfig?.outputPathInstructions ?? defaultPaths.instructions;
       paths.push(instructionsPath);

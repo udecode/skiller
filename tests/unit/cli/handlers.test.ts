@@ -118,7 +118,11 @@ describe('CLI Handlers', () => {
       nativeSkillNames: [],
       workspace: {
         cleanup: jest.fn().mockResolvedValue(undefined),
-        parsed: { source: 'owner/repo', type: 'github', url: 'https://github.com/owner/repo.git' },
+        parsed: {
+          source: 'owner/repo',
+          type: 'github',
+          url: 'https://github.com/owner/repo.git',
+        },
       },
     });
     (installAgentSkillsFromInspection as jest.Mock).mockResolvedValue([]);
@@ -155,7 +159,7 @@ describe('CLI Handlers', () => {
       preset: 'default',
       presetRoot: '/tmp/preset/default',
       removed: [],
-      synced: ['.agents/AGENTS.md', '.agents/skiller.toml'],
+      synced: ['AGENTS.md', '.agents/skiller.toml'],
     });
     // Mock loadConfig to return default config
     (loadConfig as jest.Mock).mockResolvedValue({
@@ -774,10 +778,7 @@ describe('CLI Handlers', () => {
         verbose: false,
       });
 
-      expect(syncProjectFiles).toHaveBeenNthCalledWith(
-        1,
-        mockProjectRoot,
-      );
+      expect(syncProjectFiles).toHaveBeenNthCalledWith(1, mockProjectRoot);
       expect(syncProjectFiles).toHaveBeenNthCalledWith(
         2,
         path.join(mockProjectRoot, 'templates', 'a'),
@@ -1332,9 +1333,8 @@ describe('CLI Handlers', () => {
 
   describe('initHandler', () => {
     const mockSkillerDir = path.join(mockProjectRoot, '.agents');
-    const mockInstructionsPath = path.join(mockSkillerDir, 'AGENTS.md');
+    const mockInstructionsPath = path.join(mockProjectRoot, 'AGENTS.md');
     const mockTomlPath = path.join(mockSkillerDir, 'skiller.toml');
-    const mockLegacyPath = path.join(mockSkillerDir, 'instructions.md');
 
     beforeEach(() => {
       (fs.access as jest.Mock).mockRejectedValue(new Error('File not found'));

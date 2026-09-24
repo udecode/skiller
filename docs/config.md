@@ -14,11 +14,10 @@ Skiller looks for `.agents/skiller.toml` by walking up from `--project-root`.
 
 ## Rule discovery and ordering
 
-Skiller reads `.md` and `.mdc` under `.agents/` recursively.
+Skiller reads the authored root `AGENTS.md` first, then supplemental `.md` and `.mdc` files under `.agents/` recursively. It never rewrites root `AGENTS.md`.
 
-- Primary file: `.agents/AGENTS.md` if present
-- Legacy fallback: `.agents/instructions.md` if `AGENTS.md` is missing
-- Repository root `AGENTS.md` (outside `.agents/`) is prepended if it exists and does not look like a Skiller-generated blob
+- Primary file: repository root `AGENTS.md`
+- `.agents/AGENTS.md` is not a rule source
 - Remaining files are appended in sorted path order
 
 Filtering:
@@ -29,7 +28,7 @@ Filtering:
 
 Cursor merge strategy:
 
-- `rules.merge_strategy = "cursor"` keeps `AGENTS.md` plus Cursor-style `.mdc` rules under `rules/` and `skills/` with `alwaysApply: true`
+- `rules.merge_strategy = "cursor"` keeps root `AGENTS.md` plus Cursor-style `.mdc` rules under `rules/` and `skills/` with `alwaysApply: true`
 
 ## Schema
 
@@ -47,6 +46,8 @@ High level (see `docs/mcp.md` for MCP details):
 - `[agents.<id>] enabled, output_path, output_path_instructions, output_path_config, gitignore`
 - `[agents.<id>.mcp] enabled, merge_strategy`
 
+Instruction `output_path` overrides do not apply to agents that read the authored root `AGENTS.md`; their MCP/config output paths remain configurable.
+
 ## `[sync]`
 
 `[sync]` lets `skiller install` and `skiller update` hydrate a project from a shared preset or repo source before lock restore/update and `apply`.
@@ -60,7 +61,7 @@ Preset installs can also reuse shared source files without duplicating them insi
 - declare `include = ["../../.agents/rules/react.mdc", "../../skills-lock.json"]`
 - include entries must resolve to files, not directories
 - includes resolve relative to the preset root
-- target paths are derived from the first supported root marker: `.agents`, `.claude`, `.codex`, `skills-lock.json`, or `skiller-lock.json`
+- target paths are derived from root `AGENTS.md` or the first supported root marker: `.agents`, `.claude`, `.codex`, `skills-lock.json`, or `skiller-lock.json`
 - files that physically exist inside the preset root still override included files with the same target path
 
 Fields:
@@ -73,7 +74,7 @@ Fields:
 
 Mode rules:
 
-- `preset`: sync allowlisted roots by default: `.agents/**`, `.claude/**`, `.codex/**`, `skills-lock.json`, `skiller-lock.json`
+- `preset`: sync allowlisted roots by default: `AGENTS.md`, `.agents/**`, `.claude/**`, `.codex/**`, `skills-lock.json`, `skiller-lock.json`
 - `repo`: sync only `include` matches, then apply `exclude`
 - `auto`: uses preset mode when the source looks like a curated preset root; otherwise require `include` and switch to repo mode
 

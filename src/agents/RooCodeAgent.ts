@@ -1,7 +1,6 @@
 import * as path from 'path';
 import { promises as fs } from 'fs';
 import { IAgent, IAgentConfig } from './IAgent';
-import { AgentsMdAgent } from './AgentsMdAgent';
 import {
   backupFile,
   ensureDirExists,
@@ -10,12 +9,10 @@ import {
 import { getAgentDisplayName, getAgentSkillsPath } from './catalog';
 
 /**
- * Agent for RooCode that writes to AGENTS.md and generates .roo/mcp.json
+ * Agent for RooCode that reads AGENTS.md and generates .roo/mcp.json
  * with project-level MCP server configuration.
  */
 export class RooCodeAgent implements IAgent {
-  private agentsMdAgent = new AgentsMdAgent();
-
   getIdentifier(): string {
     return 'roo';
   }
@@ -32,27 +29,12 @@ export class RooCodeAgent implements IAgent {
   }
 
   async applySkillerConfig(
-    concatenatedRules: string,
+    _concatenatedRules: string,
     projectRoot: string,
     skillerMcpJson: Record<string, unknown> | null,
     agentConfig?: IAgentConfig,
     backup = true,
   ): Promise<void> {
-    // First perform idempotent AGENTS.md write via composed AgentsMdAgent
-    await this.agentsMdAgent.applySkillerConfig(
-      concatenatedRules,
-      projectRoot,
-      null,
-      {
-        // Preserve explicit outputPath precedence semantics if provided.
-        outputPath:
-          agentConfig?.outputPath ||
-          agentConfig?.outputPathInstructions ||
-          undefined,
-      },
-      backup,
-    );
-
     // Now handle .roo/mcp.json configuration
     const outputPaths = this.getDefaultOutputPath(projectRoot);
     const mcpPath = path.resolve(

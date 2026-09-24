@@ -1,2 +1,0 @@
-# Legacy Rules
-Legacy Line

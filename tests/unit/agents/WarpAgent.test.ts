@@ -140,7 +140,7 @@ describe('WarpAgent', () => {
       const rules = 'Warp agent rules';
 
       // Create minimal .claude structure needed for revert
-      const skillerDir = path.join(tmpDir, '.claude');
+      const skillerDir = path.join(tmpDir, '.agents');
       await fs.mkdir(skillerDir, { recursive: true });
       // Create skiller.toml to make it a valid skiller directory
       await fs.writeFile(path.join(skillerDir, 'skiller.toml'), '');

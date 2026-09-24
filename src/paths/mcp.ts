@@ -24,14 +24,14 @@ export async function getNativeMcpPath(
     case 'Claude Code':
       candidates.push(path.join(projectRoot, '.mcp.json'));
       break;
-    case 'OpenAI Codex CLI':
+    case 'Codex':
       candidates.push(path.join(projectRoot, '.codex', 'config.toml'));
       break;
     case 'Aider':
       candidates.push(path.join(projectRoot, '.mcp.json'));
       break;
-    case 'Open Hands':
-      // For Open Hands, we target the main config file, not a separate mcp.json
+    case 'OpenHands':
+      // For OpenHands, target the main config file, not a separate mcp.json.
       candidates.push(path.join(projectRoot, 'config.toml'));
       break;
     case 'Gemini CLI':
@@ -45,6 +45,9 @@ export async function getNativeMcpPath(
       break;
     case 'OpenCode':
       candidates.push(path.join(projectRoot, 'opencode.json'));
+      break;
+    case 'Roo Code':
+      candidates.push(path.join(projectRoot, '.roo', 'mcp.json'));
       break;
     case 'Firebase Studio':
       candidates.push(path.join(projectRoot, '.idx', 'mcp.json'));

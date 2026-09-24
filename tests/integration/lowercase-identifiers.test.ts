@@ -12,7 +12,7 @@ describe('Canonical Identifiers Integration', () => {
     );
 
     // Create .claude directory with basic files
-    const skillerDir = path.join(tmpDir, '.claude');
+    const skillerDir = path.join(tmpDir, '.agents');
     await fs.mkdir(skillerDir, { recursive: true });
     await fs.writeFile(
       path.join(skillerDir, 'instructions.md'),
@@ -33,7 +33,7 @@ enabled = true
 enabled = true
 `;
     await fs.writeFile(
-      path.join(tmpDir, '.claude', 'skiller.toml'),
+      path.join(tmpDir, '.agents', 'skiller.toml'),
       configContent,
     );
 
@@ -62,7 +62,7 @@ enabled = true
 enabled = true
 `;
     await fs.writeFile(
-      path.join(tmpDir, '.claude', 'skiller.toml'),
+      path.join(tmpDir, '.agents', 'skiller.toml'),
       configContent,
     );
 
@@ -93,7 +93,7 @@ enabled = false
 enabled = true
 `;
     await fs.writeFile(
-      path.join(tmpDir, '.claude', 'skiller.toml'),
+      path.join(tmpDir, '.agents', 'skiller.toml'),
       configContent,
     );
 

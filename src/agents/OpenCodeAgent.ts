@@ -20,22 +20,16 @@ export class OpenCodeAgent implements IAgent {
   }
 
   async applySkillerConfig(
-    concatenatedRules: string,
+    _concatenatedRules: string,
     projectRoot: string,
     skillerMcpJson: Record<string, unknown> | null,
     agentConfig?: IAgentConfig,
   ): Promise<void> {
     const outputPaths = this.getDefaultOutputPath(projectRoot);
-    const instructionsPath = path.resolve(
-      projectRoot,
-      agentConfig?.outputPathInstructions ?? outputPaths['instructions'],
-    );
     const mcpPath = path.resolve(
       projectRoot,
       agentConfig?.outputPathConfig ?? outputPaths['mcp'],
     );
-
-    await fs.writeFile(instructionsPath, concatenatedRules);
 
     // Create OpenCode config with schema and MCP configuration
     let finalMcpConfig: { $schema: string; mcp: Record<string, unknown> } = {

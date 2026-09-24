@@ -183,7 +183,7 @@ description: Orphaned skill
     );
   });
 
-  it('migrates legacy .claude project state into .agents and localizes rules as skills', async () => {
+  it('migrates legacy non-instruction state into .agents and localizes rules as skills', async () => {
     await fs.mkdir(path.join(tmpDir, '.claude', 'skills', 'legacy-skill'), {
       recursive: true,
     });
@@ -191,10 +191,6 @@ description: Orphaned skill
     await fs.writeFile(
       path.join(tmpDir, '.claude', 'skiller.toml'),
       'default_agents = ["codex"]\n',
-    );
-    await fs.writeFile(
-      path.join(tmpDir, '.claude', 'AGENTS.md'),
-      '# Legacy instructions\n',
     );
     await fs.writeFile(
       path.join(tmpDir, '.claude', '.skiller.json'),
@@ -236,9 +232,9 @@ alwaysApply: true
     expect(
       await fs.readFile(path.join(tmpDir, '.agents', 'skiller.toml'), 'utf8'),
     ).toContain('default_agents = ["codex"]');
-    expect(
-      await fs.readFile(path.join(tmpDir, '.agents', 'AGENTS.md'), 'utf8'),
-    ).toContain('# Legacy instructions');
+    await expect(
+      fs.access(path.join(tmpDir, '.agents', 'AGENTS.md')),
+    ).rejects.toThrow();
     expect(
       await fs.readFile(
         path.join(tmpDir, '.agents', 'rules', 'legacy-skill.mdc'),
@@ -271,9 +267,6 @@ alwaysApply: true
       fs.access(path.join(tmpDir, '.claude', 'skiller.toml')),
     ).rejects.toThrow();
     await expect(
-      fs.access(path.join(tmpDir, '.claude', 'AGENTS.md')),
-    ).rejects.toThrow();
-    await expect(
       fs.access(path.join(tmpDir, '.claude', '.skiller.json')),
     ).rejects.toThrow();
     await expect(
@@ -284,29 +277,10 @@ alwaysApply: true
     ).rejects.toThrow();
   });
 
-  it('drops legacy duplicates when canonical files already match', async () => {
-    await fs.writeFile(
-      path.join(tmpDir, '.agents', 'AGENTS.md'),
-      '# Same instructions\n',
-    );
-    await fs.mkdir(path.join(tmpDir, '.claude'), { recursive: true });
-    await fs.writeFile(
-      path.join(tmpDir, '.claude', 'AGENTS.md'),
-      '# Same instructions\n',
-    );
-
-    await migrateLegacyProjectState(tmpDir, false);
-
-    expect(
-      await fs.readFile(path.join(tmpDir, '.agents', 'AGENTS.md'), 'utf8'),
-    ).toBe('# Same instructions\n');
-    await expect(
-      fs.access(path.join(tmpDir, '.claude', 'AGENTS.md')),
-    ).rejects.toThrow();
-  });
-
   it('does not re-extract local rules from .claude mirrors after canonical migration already exists', async () => {
-    await fs.mkdir(path.join(tmpDir, '.claude', 'commands'), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, '.claude', 'commands'), {
+      recursive: true,
+    });
     await fs.writeFile(
       path.join(tmpDir, '.claude', 'commands', 'noop.md'),
       '# native extra\n',
@@ -380,22 +354,6 @@ enabled = false
     expect(migratedToml).not.toContain('[agents.qwen]');
   });
 
-  it('fails loudly when legacy and canonical project state conflict', async () => {
-    await fs.writeFile(
-      path.join(tmpDir, '.agents', 'AGENTS.md'),
-      '# Canonical instructions\n',
-    );
-    await fs.mkdir(path.join(tmpDir, '.claude'), { recursive: true });
-    await fs.writeFile(
-      path.join(tmpDir, '.claude', 'AGENTS.md'),
-      '# Legacy instructions\n',
-    );
-
-    await expect(migrateLegacyProjectState(tmpDir, false)).rejects.toThrow(
-      '.claude/AGENTS.md',
-    );
-  });
-
   it('ignores legacy .claude skill folders when canonical .agents skills already exist', async () => {
     await fs.mkdir(path.join(tmpDir, '.claude', 'skills', 'ai'), {
       recursive: true,
@@ -442,8 +400,9 @@ Expanded body.
     await expect(
       fs.access(path.join(tmpDir, '.agents', 'rules', 'ai.mdc')),
     ).rejects.toThrow();
-    await expect(fs.access(path.join(tmpDir, '.claude', 'skills', 'ai')))
-      .resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(tmpDir, '.claude', 'skills', 'ai')),
+    ).resolves.toBeUndefined();
   });
 
   it('leaves .claude skill mirrors alone when canonical .agents skills already exist', async () => {
@@ -487,7 +446,8 @@ description: Canonical react
         'utf8',
       ),
     ).toContain('Canonical react');
-    await expect(fs.access(path.join(tmpDir, '.claude', 'skills', 'react')))
-      .resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(tmpDir, '.claude', 'skills', 'react')),
+    ).resolves.toBeUndefined();
   });
 });

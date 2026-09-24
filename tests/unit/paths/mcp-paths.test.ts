@@ -9,16 +9,11 @@ describe('MCP Path Resolution', () => {
   describe('getNativeMcpPath', () => {
     it('should never return paths outside the project root', async () => {
       // Test all agents that currently have home directory paths
-      const agentsToTest = [
-        'Windsurf',
-        'OpenAI Codex CLI', 
-        'Cursor',
-        'OpenCode'
-      ];
+      const agentsToTest = ['Windsurf', 'Codex', 'Cursor', 'OpenCode'];
 
       for (const agent of agentsToTest) {
         const mcpPath = await getNativeMcpPath(agent, projectRoot);
-        
+
         // If a path is returned, it must be within the project root
         if (mcpPath) {
           expect(mcpPath.startsWith(projectRoot)).toBe(true);
@@ -30,27 +25,28 @@ describe('MCP Path Resolution', () => {
     it('should return project-local paths for all supported agents', async () => {
       const supportedAgents = [
         'GitHub Copilot',
-        'Visual Studio', 
+        'Visual Studio',
         'Cursor',
         'Windsurf',
         'Claude Code',
-        'OpenAI Codex CLI',
+        'Codex',
         'Aider',
-        'Open Hands',
+        'OpenHands',
         'Gemini CLI',
         'Qwen Code',
         'Kilo Code',
         'OpenCode',
+        'Roo Code',
         'Zed',
-        'Firebase Studio'
+        'Firebase Studio',
       ];
 
       for (const agent of supportedAgents) {
         const mcpPath = await getNativeMcpPath(agent, projectRoot);
-        
+
         // All supported agents should return a path
         expect(mcpPath).not.toBeNull();
-        
+
         // And it should be within the project root
         if (mcpPath) {
           expect(mcpPath.startsWith(projectRoot)).toBe(true);
@@ -66,11 +62,13 @@ describe('MCP Path Resolution', () => {
     describe('specific agent paths', () => {
       it('Windsurf should use project-local path', async () => {
         const mcpPath = await getNativeMcpPath('Windsurf', projectRoot);
-        expect(mcpPath).toBe(path.join(projectRoot, '.windsurf', 'mcp_config.json'));
+        expect(mcpPath).toBe(
+          path.join(projectRoot, '.windsurf', 'mcp_config.json'),
+        );
       });
 
-      it('OpenAI Codex CLI should use project-local path', async () => {
-        const mcpPath = await getNativeMcpPath('OpenAI Codex CLI', projectRoot);
+      it('Codex should use project-local path', async () => {
+        const mcpPath = await getNativeMcpPath('Codex', projectRoot);
         expect(mcpPath).toBe(path.join(projectRoot, '.codex', 'config.toml'));
       });
 

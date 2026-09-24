@@ -17,7 +17,7 @@ describe('OpenHandsAgent', () => {
     expect(agent.getIdentifier()).toBe('openhands');
   });
   it('should return the correct name', () => {
-    expect(agent.getName()).toBe('Open Hands');
+    expect(agent.getName()).toBe('OpenHands');
   });
   it('should return the correct default output path for instructions', () => {
     const expected = path.join(tmpDir, '.openhands', 'microagents', 'repo.md');
