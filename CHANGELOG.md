@@ -1,5 +1,11 @@
 # skiller
 
+## 0.10.1
+
+### Patch Changes
+
+- [#23](https://github.com/udecode/skiller/pull/23) [`8b85b7b`](https://github.com/udecode/skiller/commit/8b85b7ba851db68395c636bccb0b30c70b67b13e) Thanks [@zbeyens](https://github.com/zbeyens)! - Keep Claude plugins that a project enables natively. `skiller apply` no longer refuses when `.claude/settings.json` lists `enabledPlugins`; it refuses only when skiller's own manifest still carries legacy plugin entries.
+
 ## 0.10.0
 
 ### Minor Changes
