@@ -74,18 +74,7 @@ Conflict behavior:
 
 ## Claude plugins
 
-If `.claude/settings.json` enables Claude Code plugins, Skiller syncs plugin content into agent skills directories:
+Skiller no longer syncs Claude Code plugins into skills:
 
-- Plugin `skills/` directories are copied as skills
-- Plugin `commands/**/*.md` are converted into skills (`SKILL.md`)
-- Plugin `agents/**/*.md` are converted into skills (`SKILL.md`)
-
-Conflict behavior:
-
-- Local and project names win
-- Plugin items are namespaced as `<pluginName>-<name>` (numeric suffix if needed)
-
-Tracking + cleanup:
-
-- Skiller tracks plugin/project-managed items in `.claude/.skiller.json`
-- Disabling a plugin removes its managed items (unless the plugin is enabled but cannot be resolved on disk)
+- `enabledPlugins` and `extraKnownMarketplaces` in `.claude/settings.json` are native Claude Code config; `skiller apply` leaves them as they are
+- Plugin entries left in skiller's manifest (`.agents/.skiller.json` or `.claude/.skiller.json`) are legacy sync state: `skiller apply` refuses until `skiller migrate claude-plugins --execute` moves them to repo installs

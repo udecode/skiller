@@ -19,11 +19,11 @@ Common causes:
 - Run `skiller apply` (agent-specific skill mirrors are written during apply)
 - Check warnings for missing `SKILL.md` (those folders are skipped)
 
-## Claude plugins not syncing
+## Claude plugins
 
-- Ensure `.claude/settings.json` exists and has `enabledPlugins`
-- Plugins are read from `~/.claude/plugins/marketplaces/...`
-- If Skiller warns "Enabled plugin not installed", install the plugin in Claude Code first
+- Skiller no longer syncs Claude plugins into skills
+- `enabledPlugins` and `extraKnownMarketplaces` in `.claude/settings.json` are native Claude Code config; `skiller apply` leaves them as they are
+- `skiller apply` refuses only when skiller's own manifest (`.agents/.skiller.json` or `.claude/.skiller.json`) still lists plugin entries; run `skiller migrate claude-plugins` to move those to repo installs
 
 ## I don't want Skiller touching `.gitignore`
 
