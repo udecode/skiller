@@ -3,7 +3,7 @@ import * as path from 'path';
 import { applyAllAgentConfigs } from '../../src/lib';
 import { setupTestProject, teardownTestProject } from '../harness';
 
-describe('Legacy Claude plugin rejection (Integration)', () => {
+describe('Claude plugin state (Integration)', () => {
   let testProject: { projectRoot: string };
 
   beforeEach(async () => {
@@ -58,24 +58,45 @@ enabled = true
     ).rejects.toThrow('skiller migrate claude-plugins');
   }
 
-  it('rejects enabled Claude plugins in .claude/settings.json', async () => {
-    await fs.mkdir(path.join(testProject.projectRoot, '.claude'), {
-      recursive: true,
-    });
-    await fs.writeFile(
-      path.join(testProject.projectRoot, '.claude', 'settings.json'),
-      JSON.stringify(
-        {
-          enabledPlugins: {
-            'compound-engineering@every-marketplace': true,
-          },
+  it('keeps Claude plugins the project enables natively', async () => {
+    const settings = {
+      enabledPlugins: {
+        'compound-engineering@every-marketplace': true,
+      },
+      extraKnownMarketplaces: {
+        'every-marketplace': {
+          source: { source: 'github', repo: 'every/marketplace', ref: 'v1' },
         },
-        null,
-        2,
-      ),
+      },
+    };
+    const settingsPath = path.join(
+      testProject.projectRoot,
+      '.claude',
+      'settings.json',
+    );
+    await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+
+    await applyAllAgentConfigs(
+      testProject.projectRoot,
+      ['codex', 'claude-code'],
+      undefined,
+      false,
+      undefined,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
     );
 
-    await expectApplyToRejectWithMigrationGuidance();
+    const written = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
+    expect(written.enabledPlugins).toEqual(settings.enabledPlugins);
+    expect(written.extraKnownMarketplaces).toEqual(
+      settings.extraKnownMarketplaces,
+    );
   });
 
   it('rejects canonical plugin manifest entries in .agents/.skiller.json', async () => {

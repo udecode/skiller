@@ -8,29 +8,6 @@ interface LegacyPluginManifestLocation {
   pluginIds: string[];
 }
 
-async function readEnabledPluginIds(projectRoot: string): Promise<string[]> {
-  const settingsPath = path.join(
-    projectRoot,
-    LEGACY_SKILLER_DIR,
-    'settings.json',
-  );
-
-  try {
-    const raw = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as unknown;
-    if (!raw || typeof raw !== 'object') return [];
-
-    const enabledPlugins = (raw as Record<string, unknown>).enabledPlugins;
-    if (!enabledPlugins || typeof enabledPlugins !== 'object') return [];
-
-    return Object.entries(enabledPlugins as Record<string, unknown>)
-      .filter(([, enabled]) => enabled === true)
-      .map(([pluginId]) => pluginId)
-      .sort((a, b) => a.localeCompare(b));
-  } catch {
-    return [];
-  }
-}
-
 function readPluginIdsFromManifestRaw(raw: unknown): string[] {
   if (!raw || typeof raw !== 'object') return [];
 
@@ -86,13 +63,15 @@ async function readPluginManifestLocations(
   return locations;
 }
 
+// Only plugin entries in skiller's own manifest are legacy sync state.
+// `enabledPlugins` in .claude/settings.json is native Claude Code config that a
+// project may declare itself (with extraKnownMarketplaces), so apply keeps it.
 export async function assertNoLegacyClaudePluginState(
   projectRoot: string,
 ): Promise<void> {
-  const enabledPluginIds = await readEnabledPluginIds(projectRoot);
   const manifestLocations = await readPluginManifestLocations(projectRoot);
 
-  if (enabledPluginIds.length === 0 && manifestLocations.length === 0) {
+  if (manifestLocations.length === 0) {
     return;
   }
 
@@ -101,12 +80,6 @@ export async function assertNoLegacyClaudePluginState(
     '',
     'Found legacy Claude plugin state:',
   ];
-
-  if (enabledPluginIds.length > 0) {
-    lines.push(
-      `- enabled plugins in .claude/settings.json: ${enabledPluginIds.join(', ')}`,
-    );
-  }
 
   for (const location of manifestLocations) {
     lines.push(
