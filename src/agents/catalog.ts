@@ -7,6 +7,7 @@ import {
 
 export const PUBLIC_AGENT_IDENTIFIERS = [
   'amp',
+  'antigravity',
   'augment',
   'claude-code',
   'cline',

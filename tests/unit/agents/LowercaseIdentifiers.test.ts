@@ -1,4 +1,5 @@
 import { CopilotAgent } from '../../../src/agents/CopilotAgent';
+import { AntigravityAgent } from '../../../src/agents/AntigravityAgent';
 import { ClaudeAgent } from '../../../src/agents/ClaudeAgent';
 import { CodexCliAgent } from '../../../src/agents/CodexCliAgent';
 import { CursorAgent } from '../../../src/agents/CursorAgent';
@@ -9,6 +10,7 @@ import { KiloCodeAgent } from '../../../src/agents/KiloCodeAgent';
 describe('Agent Lowercase Identifiers', () => {
   const expectedIdentifiers = {
     'github-copilot': CopilotAgent,
+    antigravity: AntigravityAgent,
     'claude-code': ClaudeAgent,
     codex: CodexCliAgent,
     cursor: CursorAgent,
@@ -29,6 +31,7 @@ describe('Agent Lowercase Identifiers', () => {
   describe('Agent.getName() returns display names', () => {
     const expectedDisplayNames = {
       'github-copilot': 'GitHub Copilot',
+      antigravity: 'Antigravity',
       'claude-code': 'Claude Code',
       codex: 'Codex',
       cursor: 'Cursor',

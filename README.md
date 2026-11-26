@@ -41,6 +41,7 @@ npx skiller@latest install
 | ---------------- | -------------- | -------------------------------------------------- | ------------------------------ | ------------------- |
 | `github-copilot` | GitHub Copilot | `AGENTS.md`                                        | `.vscode/mcp.json` (`servers`) | `.agents/skills`    |
 | `claude-code`    | Claude Code    | `AGENTS.md`                                        | `.mcp.json`                    | `.claude/skills`    |
+| `antigravity`    | Antigravity    | `AGENTS.md`                                        | `.agents/mcp_config.json`      | `.agents/skills`    |
 | `codex`          | Codex          | `AGENTS.md`, `.codex/config.toml`                  | `.codex/config.toml`           | `.agents/skills`    |
 | `cursor`         | Cursor         | `AGENTS.md`                                        | `.cursor/mcp.json`             | `.agents/skills`    |
 | `windsurf`       | Windsurf       | `AGENTS.md`                                        | `.windsurf/mcp_config.json`    | `.windsurf/skills`  |

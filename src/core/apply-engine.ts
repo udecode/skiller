@@ -837,6 +837,40 @@ function transformMcpForKiloCode(
   return transformedMcp;
 }
 
+/**
+ * Transform MCP server definitions for Antigravity (.agents/mcp_config.json).
+ * Antigravity uses `serverUrl` for Streamable HTTP servers and omits `type`.
+ */
+function transformMcpForAntigravity(
+  mcpJson: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!mcpJson.mcpServers || typeof mcpJson.mcpServers !== 'object') {
+    return mcpJson;
+  }
+
+  const transformedMcp = { ...mcpJson };
+  const transformedServers: Record<string, unknown> = {};
+
+  for (const [name, serverDef] of Object.entries(
+    mcpJson.mcpServers as Record<string, unknown>,
+  )) {
+    if (serverDef && typeof serverDef === 'object') {
+      const server = { ...(serverDef as Record<string, unknown>) };
+      delete server.type;
+      if (typeof server.url === 'string' && !server.serverUrl) {
+        server.serverUrl = server.url;
+        delete server.url;
+      }
+      transformedServers[name] = server;
+    } else {
+      transformedServers[name] = serverDef;
+    }
+  }
+
+  transformedMcp.mcpServers = transformedServers;
+  return transformedMcp;
+}
+
 async function applyStandardMcpConfiguration(
   agent: IAgent,
   filteredMcpJson: Record<string, unknown>,
@@ -882,6 +916,8 @@ async function applyStandardMcpConfiguration(
       path.basename(dest) === '.mcp.json'
     ) {
       mcpToMerge = transformMcpForClaude(filteredMcpJson);
+    } else if (agent.getIdentifier() === 'antigravity') {
+      mcpToMerge = transformMcpForAntigravity(filteredMcpJson);
     } else if (agent.getIdentifier() === 'kilocode') {
       mcpToMerge = transformMcpForKiloCode(filteredMcpJson);
     }
