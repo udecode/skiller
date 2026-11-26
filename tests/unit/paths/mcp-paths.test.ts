@@ -9,7 +9,13 @@ describe('MCP Path Resolution', () => {
   describe('getNativeMcpPath', () => {
     it('should never return paths outside the project root', async () => {
       // Test all agents that currently have home directory paths
-      const agentsToTest = ['Windsurf', 'Codex', 'Cursor', 'OpenCode'];
+      const agentsToTest = [
+        'Antigravity',
+        'Windsurf',
+        'Codex',
+        'Cursor',
+        'OpenCode',
+      ];
 
       for (const agent of agentsToTest) {
         const mcpPath = await getNativeMcpPath(agent, projectRoot);
@@ -28,6 +34,7 @@ describe('MCP Path Resolution', () => {
         'Visual Studio',
         'Cursor',
         'Windsurf',
+        'Antigravity',
         'Claude Code',
         'Codex',
         'Aider',
@@ -60,6 +67,13 @@ describe('MCP Path Resolution', () => {
     });
 
     describe('specific agent paths', () => {
+      it('Antigravity should use project-local .agents/mcp_config.json path', async () => {
+        const mcpPath = await getNativeMcpPath('Antigravity', projectRoot);
+        expect(mcpPath).toBe(
+          path.join(projectRoot, '.agents', 'mcp_config.json'),
+        );
+      });
+
       it('Windsurf should use project-local path', async () => {
         const mcpPath = await getNativeMcpPath('Windsurf', projectRoot);
         expect(mcpPath).toBe(

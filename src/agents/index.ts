@@ -15,6 +15,7 @@ import { OpenCodeAgent } from './OpenCodeAgent';
 import { CrushAgent } from './CrushAgent';
 import { GooseAgent } from './GooseAgent';
 import { AmpAgent } from './AmpAgent';
+import { AntigravityAgent } from './AntigravityAgent';
 import { QwenCodeAgent } from './QwenCodeAgent';
 import { KiroAgent } from './KiroAgent';
 import { WarpAgent } from './WarpAgent';
@@ -30,6 +31,7 @@ export { AbstractAgent };
 
 const publicAgentFactories: Record<PublicAgentIdentifier, () => IAgent> = {
   amp: () => new AmpAgent(),
+  antigravity: () => new AntigravityAgent(),
   augment: () => new AugmentCodeAgent(),
   'claude-code': () => new ClaudeAgent(),
   cline: () => new ClineAgent(),

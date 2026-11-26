@@ -309,6 +309,7 @@ async function removeAdditionalAgentFiles(
   dryRun: boolean,
 ): Promise<number> {
   const additionalFiles = [
+    '.agents/mcp_config.json',
     '.gemini/settings.json',
     '.mcp.json',
     '.vscode/mcp.json',
