@@ -1,5 +1,11 @@
 # skiller
 
+## 0.11.0
+
+### Minor Changes
+
+- [#25](https://github.com/udecode/skiller/pull/25) [`462b361`](https://github.com/udecode/skiller/commit/462b3613c963470764aa35ffe45012978f54bec4) Thanks [@zbeyens](https://github.com/zbeyens)! - Add Antigravity (`antigravity`) agent support using root `AGENTS.md`, `.agents/skills`, and `.agents/mcp_config.json` (transforming remote server `url` entries to `serverUrl` and omitting `type`).
+
 ## 0.10.1
 
 ### Patch Changes
